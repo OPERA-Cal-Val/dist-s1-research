@@ -1,0 +1,25 @@
+name: dist-s1
+channels:
+  - conda-forge
+dependencies:
+  - python=>3.11 # required for shapely 2.0.0
+  - pip
+  # For packaging, and testing
+  - flake8
+  - flake8-import-order
+  - flake8-blind-except
+  - flake8-builtins
+  - jupyter
+  - boto3
+  - ipykernel
+  - rasterio
+  - geopandas
+  - shapely=>2.0
+  - pandas
+  - tqdm
+  - requests
+  - rasterio
+  - asf_search
+  - earthaccess
+  - tile_mate
+  - dem_stitcher
