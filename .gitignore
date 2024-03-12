@@ -63,3 +63,6 @@ __pycache__/
 
 # Ignore logs
 *.log
+
+# Data files to include
+!marshak/3_dist_sites/slcs_for_processing.csv.zip
