@@ -6,6 +6,7 @@ dependencies:
   - pip
   # For packaging, and testing
   - flake8
+  - backoff
   - flake8-import-order
   - flake8-blind-except
   - flake8-builtins
@@ -25,3 +26,5 @@ dependencies:
   - tile_mate>=0.0.9
   - mpire
   - dem_stitcher
+  - pip:
+     - git+https://github.com/opera-adt/DSWX-SAR.git
