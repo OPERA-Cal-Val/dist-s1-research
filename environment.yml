@@ -11,6 +11,7 @@ dependencies:
   - flake8-blind-except
   - flake8-builtins
   - jupyter
+  - contextily
   - boto3
   - ipykernel
   - rasterio
