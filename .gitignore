@@ -66,3 +66,4 @@ __pycache__/
 
 # Data files to include
 !marshak/3_dist_sites/slcs_for_processing.csv.zip
+!marshak/4_rtc_organization/rtc_s1_table.csv.zip
