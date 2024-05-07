@@ -1,4 +1,4 @@
-name: dist-s1
+name: dist-s1-intel
 channels:
   - conda-forge
 dependencies:
@@ -32,4 +32,5 @@ dependencies:
   - localtileserver
   - xarray
   - pip:
+     - bm3d
      - git+https://github.com/opera-adt/DSWX-SAR.git
