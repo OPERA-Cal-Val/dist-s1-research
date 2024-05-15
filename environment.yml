@@ -28,8 +28,15 @@ dependencies:
   - mpire
   - dem_stitcher
   - leafmap
+  - dill
   - flask<3.0
   - localtileserver
   - xarray
+  - pytorch
+  - torchvision
+  - pytorch-lightning
   - pip:
+     - torch
+     - timm
+     - bm3d
      - git+https://github.com/opera-adt/DSWX-SAR.git

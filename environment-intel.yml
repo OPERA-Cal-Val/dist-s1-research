@@ -30,7 +30,18 @@ dependencies:
   - leafmap
   - flask<3.0
   - localtileserver
+  - dill
+  - multiprocess
   - xarray
+  - pytorch
+  - torchvision
+  - pytorch-lightning
+  - kornia
   - pip:
+     - torch
+     - timm==0.4.12
+     - torchmetrics
      - bm3d
      - git+https://github.com/opera-adt/DSWX-SAR.git
+     - git+https://github.com/mhamilton723/FeatUp
+
