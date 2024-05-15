@@ -5,7 +5,7 @@ channels:
 dependencies:
   - python=>3.11 # required for shapely 2.0.0
   - pip
-  - pytorch-cuda==11.6
+  - pytorch-cuda
   - pip:
      - torchmetrics
      - bm3d
