@@ -1,0 +1,12 @@
+name: dist-s1
+channels:
+  - conda-forge
+dependencies:
+  - python=>3.11 # required for shapely 2.0.0
+  - pip
+  - nvidia
+  - pytorch-cuda==11.6
+  - pip:
+     - torchmetrics
+     - bm3d
+     - git+https://github.com/opera-adt/DSWX-SAR.git
