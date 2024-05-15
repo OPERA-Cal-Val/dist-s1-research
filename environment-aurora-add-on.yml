@@ -1,10 +1,10 @@
 name: dist-s1
 channels:
   - conda-forge
+  - nvidia
 dependencies:
   - python=>3.11 # required for shapely 2.0.0
   - pip
-  - nvidia
   - pytorch-cuda==11.6
   - pip:
      - torchmetrics
