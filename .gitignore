@@ -69,3 +69,4 @@ __pycache__/
 !marshak/4_rtc_organization/rtc_s1_table.json.zip
 !marshak/4_rtc_organization/burst_extent_subset.geojson.zip
 !marshak/6_torch_dataset/dist_s1_patch_lut.json.zip
+!marshak/3_dist_sites/dist_hls_val_sites.geojson
