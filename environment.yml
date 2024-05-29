@@ -37,7 +37,9 @@ dependencies:
   - pytorch-lightning
   - timm
   - kornia
+  - sktime
   - pip:
      - torchmetrics
+     - prophet
      - bm3d
      - git+https://github.com/opera-adt/DSWX-SAR.git
