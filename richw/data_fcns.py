@@ -55,3 +55,6 @@ def get_last_obs_date_before_change(row):
 
     return last_obs_date
 
+#def first(iterable, condition = lambda x: True):
+#  return next(x for x in iterable if condition(x))
+
