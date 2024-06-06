@@ -37,11 +37,13 @@ for l in lines:
   strataAreas[s] = float(area)
   strataCounts[s] = int(zcount)
 Nstrata = len(strataCounts)
-
+print(f"Nstrata = {Nstrata}")
 
 #strata enum {CONFHIVEG=6, PROVHIVEG=5, CONFLOWVEG=4,PROVLOWVEG=3,GENDIST=2,NODIST=1,NODATA=0};
 #mapsource = "mapLabelsv1sample"
 mapsource = url_maplabels_base
+print(f"mapsource = {mapsource}")
+
 for cattype in ["gt50","lt50","confgt50","conflt50"]:#["gt50_onlyprov","confgt50_curr","provgt50_curr","gt50","lt50","provgt50","provlt50","gt50_onlyprov","lt50_onlyprov","confgt50","conflt50"]:
     basename = "v1sample_"+cattype
     map = umd_fcns.getDISTALERTStatus_vI(mapsource,ANNname,ids,True)

@@ -10,7 +10,7 @@ def getDISTALERTStatus_vI(mapsource,ANNname,ids,skipNodata=False):
     mapalert = {}
     for ID in ids:
         mapalert[ID] = [255 for i in range(0,366)]
-        print(f"ID = {ID}")
+        #print(f"ID = {ID}")
         #with open(mapsource+'/'+ID+'_DIST-ALERT_'+ANNname+'.csv','r') as mapfile:
         with urllib.request.urlopen(mapsource+'/'+ID+'_DIST-ALERT_'+ANNname+'.csv') as mapfile:
             lines = mapfile.readlines()
