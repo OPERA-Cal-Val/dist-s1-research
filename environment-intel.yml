@@ -33,6 +33,7 @@ dependencies:
   - dill
   - multiprocess
   - xarray
+  - astropy
   - pytorch
   - torchvision
   - pytorch-lightning

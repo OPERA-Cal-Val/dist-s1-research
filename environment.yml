@@ -30,12 +30,14 @@ dependencies:
   - leafmap
   - dill
   - flask<3.0
+  - astropy
   - localtileserver
   - xarray
   - pytorch
   - torchvision
   - pytorch-lightning
   - timm
+  - statsmodels
   - kornia
   - sktime
   - pip:
