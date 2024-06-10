@@ -7,7 +7,7 @@ Notebooks to provide trade studies and visualizations for developing the final O
 ```
 mamba env update -f environment.yml
 conda activate dist-s1
-python -m ipykernel install --user dist-s1
+python -m ipykernel install --user --name dist-s1
 ```
 
 ### For bm3d
