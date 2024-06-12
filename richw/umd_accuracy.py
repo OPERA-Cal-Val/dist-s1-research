@@ -44,7 +44,7 @@ print(f"Nstrata = {Nstrata}")
 mapsource = url_maplabels_base
 print(f"mapsource = {mapsource}")
 
-for cattype in ["gt50","lt50","confgt50","conflt50"]:#["gt50_onlyprov","confgt50_curr","provgt50_curr","gt50","lt50","provgt50","provlt50","gt50_onlyprov","lt50_onlyprov","confgt50","conflt50"]:
+for cattype in ["gt50"]:#["gt50","lt50","confgt50","conflt50"]:#["gt50_onlyprov","confgt50_curr","provgt50_curr","gt50","lt50","provgt50","provlt50","gt50_onlyprov","lt50_onlyprov","confgt50","conflt50"]:
     basename = "v1sample_"+cattype
     map = umd_fcns.getDISTALERTStatus_vI(mapsource,ANNname,ids,True)
     mapsimple = umd_fcns.filterMap(ids,map,cattype)
@@ -53,19 +53,25 @@ for cattype in ["gt50","lt50","confgt50","conflt50"]:#["gt50_onlyprov","confgt50
         name = basename+"_lookback"+str(lookback)+"_duration"+str(duration)
         noLabels = ["OCmin","OCmaj","OCtotal","noChange","VLmin"]
         ref = umd_fcns.getRefALERTbinaryDaily(["VLmaj","VLtotal"],noLabels)
+        ref1 = ref
         #with open("ref_accuracy_V1.txt","w") as OUT:
         #    OUT.write(str(ref))
         print("\n"+name)
         (n,ntotal) = umd_fcns.alertConfusionMatrix_vTS2(ids,cattype,map,ref,strata,strataCounts,duration,[],lookback,name,False)
         umd_fcns.accuracy(n,ntotal,strataCounts,name,True)
+        n1 = n
+        ntotal1 = ntotal
         
     for duration in [15]:#,5,10,15]:
       for lookback in [30]:#1,15,30]:
         name = basename+"_lookback"+str(lookback)+"_duration"+str(duration)+"_VLmin"
         noLabels = ["OCmin","OCmaj","OCtotal","noChange"]
         ref = umd_fcns.getRefALERTbinaryDaily(["VLmaj","VLtotal","VLmin"],noLabels)
+        ref2 = ref
         print("\n"+name)
         #print(mapsimple['1'])
         #print(ref['1'])
         (n,ntotal) = umd_fcns.alertConfusionMatrix_vTS2(ids,cattype,map,ref,strata,strataCounts,duration,[1],lookback,name,False)
         umd_fcns.accuracy(n,ntotal,strataCounts,name,True)
+        n2 = n
+        ntotal2 = ntotal

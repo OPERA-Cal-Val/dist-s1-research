@@ -67,6 +67,9 @@ fig.savefig('sites.png',dpi=300,bbox_inches="tight")
 # Write the site table to a geojson file
 df_sites.to_file('dist_hls_val_sites.geojson', driver='GeoJSON')
 
+# Join burst table with site id table
+# Following marshak/3_dist_sites/dist_hls_validation_table.ipynb
+
 # Subset of sites
 # Read the table made by CM
 # marshak/3_dist_sites/dist_hls_validation_table.ipynb
@@ -94,6 +97,7 @@ ref_dist_date = []
 fig1,ax1 = plt.subplots()
 
 for index, row in df_sites_subset.iterrows():
+#index, row = next(df_sites_subset.iterrows())
   print(row['site_id'])
 
   ref_dist_date1 = row['change_time']
