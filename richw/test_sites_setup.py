@@ -1,8 +1,11 @@
 #! /u/aurora-r0/richw/pkgs/miniforge3/envs/dist-s1/bin/python -i
 
 import os
+import numpy as np
 import geopandas as gpd
+import rasterio
 from rasterio.crs import CRS
+from pathlib import Path
 import matplotlib.pyplot as plt
 from shapely.geometry import Point
 import pandas as pd
@@ -21,15 +24,18 @@ filename_slcs_for_processing = 'slcs_for_processing.csv.zip'
 #url_maplabels = 'https://github.com/OPERA-Cal-Val/DIST-Validation/blob/main/mapLabelsv1sample'
 url_maplabels_base = 'https://raw.githubusercontent.com/OPERA-Cal-Val/DIST-Validation/main/mapLabelsv1sample'
 filename_rtc_s1_table = 'rtc_s1_table.json.zip'
+dir_rtc_data = '/u/aurora-r0/cmarshak/dist-s1-research/marshak/6_torch_dataset/opera_rtc_data'
+
 
 # Check for burst_id database and pull if needed
 if os.path.isfile(filename_burst_id):
   print(f"Using burst_id database file: {filename_burst_id}")
+  df_burst = read_geojson_gzip(filename_burst_id)
 else:
   print(f"Loading burst_id database from {url_burst_id}")
-  df = gpd.read_file(url_burst_id)
+  df_burst = gpd.read_file(url_burst_id)
   print(f"Writing burst_id database file to: {filename_burst_id}")
-  to_geojson_gzip(df, filename_burst_id)
+  to_geojson_gzip(df_burst, filename_burst_id)
 
 # Read optical reference data (human observer results)
 # for the 300 test sites
@@ -69,6 +75,15 @@ df_sites.to_file('dist_hls_val_sites.geojson', driver='GeoJSON')
 
 # Join burst table with site id table
 # Following marshak/3_dist_sites/dist_hls_validation_table.ipynb
+df_val_bursts = gpd.sjoin(df_burst, df_sites, how='inner',
+  predicate='intersects').reset_index(drop=True)
+df_val_bursts = df_val_bursts.drop_duplicates()
+df_val_bursts = df_val_bursts.drop(columns=['index_right'])
+df_val_bursts['track_number'] = df_val_bursts.burst_id_jpl.map(
+  lambda burst_id_jpl: int(burst_id_jpl.split('_')[0][1:]))
+df_val_bursts = df_val_bursts.sort_values(by=['site_id',
+  'burst_id_jpl']).reset_index(drop=True)
+df_val_bursts.rename(columns={'burst_id_jpl': 'jpl_burst_id'}, inplace=True)
 
 # Subset of sites
 # Read the table made by CM
@@ -78,6 +93,8 @@ sites_used = df_slcs.site_id.unique()
 df_sites_subset = df_sites[df_sites.site_id.isin(sites_used)].reset_index(drop=True)
 # Write site subset table
 df_sites_subset.to_file('sites_for_processing_may_2024.geojson', driver='GeoJSON')
+df_val_bursts_subset = df_val_bursts[
+  df_val_bursts.site_id.isin(sites_used)].reset_index(drop=True)
 
 # Load RTC Table
 # Read the table made by CM
@@ -127,4 +144,25 @@ for index, row in df_sites_subset.iterrows():
     first_date = found_date[0]
     i_first = i_found_date[0]
     gen_dist_date.append(first_date)
+
+for index, row in df_val_bursts_subset.iterrows():
+  print(f"id: {row['site_id']}, jpl_burst_id: {row['jpl_burst_id']}")
+  burst_id = row['jpl_burst_id']
+  site_id = row['site_id']
+  df_site = df_sites_subset[df_sites_subset.site_id
+    == site_id].reset_index(drop=True)
+  lon = df_site.geometry. ?
+  for dir_burst in os.listdir(dir_rtc_data):
+    print(f"dir_burst: {dir_burst}")
+    dir_burst1 = os.path.join(dir_rtc_data,dir_burst)
+    for filename_rtc in os.listdir(dir_burst1):
+      file_path = os.path.join(dir_burst1, filename_rtc)
+      if os.path.isfile(file_path):
+        with rasterio.open(file_path) as rtc_dataset:
+          str_channel = filename_rtc[-6:-4]
+          str_datetime = filename_rtc[33:48]
+          crs = rtc_dataset.crs
+          row,col = src.index(lon,lat)
+          print(f"channel: {str_channel} datetime: {str_datetime}")
+# rasterio.warp.transform_bounds() to handle vectors of lons,lats...
 
