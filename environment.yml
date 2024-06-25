@@ -1,6 +1,7 @@
 name: dist-s1
 channels:
   - conda-forge
+  - pytorch
 dependencies:
   - python=>3.11 # required for shapely 2.0.0
   - pip
@@ -25,7 +26,6 @@ dependencies:
   - asf_search
   - earthaccess
   - tile_mate>=0.0.9
-  - mpire
   - dem_stitcher
   - leafmap
   - dill
@@ -33,15 +33,14 @@ dependencies:
   - astropy
   - localtileserver
   - xarray
-  - pytorch
+  - pytorch::pytorch
   - torchvision
   - pytorch-lightning
-  - timm
+  - torchmetrics
   - statsmodels
   - kornia
+  - backoff
   - sktime
   - pip:
-     - torchmetrics
-     - prophet
+     - timm
      - bm3d
-     - git+https://github.com/opera-adt/DSWX-SAR.git
