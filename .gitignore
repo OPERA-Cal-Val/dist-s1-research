@@ -58,6 +58,9 @@ __pycache__/
 *.wld
 *.geojson
 
+# Pngs
+marshak/**/*.png
+
 # Zip files
 *.zip
 
