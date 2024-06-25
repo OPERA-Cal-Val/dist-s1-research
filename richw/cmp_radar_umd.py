@@ -20,6 +20,7 @@ import itertools
 from datetime import datetime, timedelta
 import distmetrics
 import data_fcns
+import umd_fcns
 
 filename_burst_id = 'opera_burst_ids.geojson.zip'
 url_burst_id = 'https://github.com/opera-adt/burst_db/releases/download/v0.3.1/burst-id-geometries-simple-0.3.1.geojson.zip'
@@ -29,6 +30,8 @@ url_maplabels_base = 'https://raw.githubusercontent.com/OPERA-Cal-Val/DIST-Valid
 filename_rtc_s1_table = 'rtc_s1_table.json.zip'
 dir_rtc_data = '/u/aurora-r0/cmarshak/dist-s1-research/marshak/6_torch_dataset/opera_rtc_data'
 
+url_maplabels_base = 'https://raw.githubusercontent.com/OPERA-Cal-Val/DIST-Validation/main/mapLabelsv1sample'
+ALERTname = "v1sample"
 
 # Check for burst_id database and pull if needed
 if os.path.isfile(filename_burst_id):
@@ -88,12 +91,15 @@ df_val_bursts = df_val_bursts.sort_values(by=['site_id',
   'burst_id_jpl']).reset_index(drop=True)
 df_val_bursts.rename(columns={'burst_id_jpl': 'jpl_burst_id'}, inplace=True)
 
+#df_val_bursts['jpl_burst_id'] = df_val_bursts.applymap(lambda x: 
 for index,row in df_val_bursts.iterrows():
   # Convert jpl_burst_id (uppercase,dashes) 
   burst_id = row['jpl_burst_id']
   burst_id_d = burst_id.replace("_","-")
   burst_id_upper = burst_id_d.upper()
+  #df_val_bursts.at['jpl_burst_id',index] = burst_id_upper
   df_val_bursts['jpl_burst_id'][index] = burst_id_upper
+  #df_val_bursts['jpl_burst_id'].replace(burst_id,burst_id_upper)
   
 # Subset of sites
 # Read the table made by CM
@@ -127,50 +133,17 @@ gen_dist_date = []
 ref_dist_date = []
 fig1,ax1 = plt.subplots()
 
-for index, row in df_sites_subset.iterrows():
-#index, row = next(df_sites_subset.iterrows())
-  print(row['site_id'])
 
-  ref_dist_date1 = row['change_time']
-  ref_dist_date.append(ref_dist_date1)
-
-  site_id_str = "{:.0f}".format(row['site_id'])
-  filename_maplabel = site_id_str + '_DIST-ALERT_v1sample.csv'
-  maplabel = pd.read_csv(url_maplabels_base + '/' + filename_maplabel)
-  dates = maplabel['VEG-DIST-DATE']
-  date_present = dates.notna()
-  i_found_date = list(itertools.compress(range(len(date_present)),date_present))
-  found_date = list(itertools.compress(dates,date_present))
-  if len(found_date) == 0:
-    veg_dist_date.append(0)
-  else:
-    first_date = found_date[0]
-    i_first = i_found_date[0]
-    veg_dist_date.append(first_date)
-
-  dates = maplabel['GEN-DIST-DATE']
-  date_present = dates.notna()
-  i_found_date = list(itertools.compress(range(len(date_present)),date_present))
-  found_date = list(itertools.compress(dates,date_present))
-  if len(found_date) == 0:
-    gen_dist_date.append(0)
-  else:
-    first_date = found_date[0]
-    i_first = i_found_date[0]
-    gen_dist_date.append(first_date)
-
-vv_data = []
-vh_data = []
-vv_datetime = []
-vh_datetime = []
 fstr = "%Y%m%dT%H%M%SZ"
 td_lookback = timedelta(days=365)
 td_halfwindow = timedelta(days=12)
+dist_threshold = 3.0
+radar_alert = {}
+radar_dist = []
 
-#for index, row in df_val_bursts_subset.iterrows():
-for i in range(0,1):
-  index,row = next(df_val_bursts_subset.iterrows())
-  print(f"id: {row['site_id']}, jpl_burst_id: {row['jpl_burst_id']}")
+for index, row in df_val_bursts_subset.iterrows():
+#for i in range(0,1):
+  #index,row = next(df_val_bursts_subset.iterrows())
   # Need burst id using uppercase and dashes
   burst_id = row['jpl_burst_id']
   burst_id_d = burst_id.replace("_","-")
@@ -188,6 +161,18 @@ for i in range(0,1):
   # RTC dataframe also uses burst id label (uppercase,dashes)
   # Note: order of entries of df_rtc_ts differs from order of filename_rtc
   df_rtc_ts = df_rtc[df_rtc.jpl_burst_id == burst_id_upper].reset_index(drop=True)
+  if len(df_rtc_ts) == 0:
+    # This jpl_burst_id does not have data for this site_id
+    print(f"id: {row['site_id']}, jpl_burst_id: {row['jpl_burst_id']} not present")
+    continue
+  else:
+    print(f"id: {row['site_id']}, jpl_burst_id: {row['jpl_burst_id']}")
+
+  # Reset lists that accumulate time series data for each burst
+  vv_data = []
+  vh_data = []
+  vv_datetime = []
+  vh_datetime = []
   # Each file has data from one datetime.  Iterate over all.
   for filename_rtc in os.listdir(dir_burst1):
     file_path = os.path.join(dir_burst1, filename_rtc)
@@ -202,7 +187,7 @@ for i in range(0,1):
         x = gdf1_re.geometry.x[0]
         y = gdf1_re.geometry.y[0]
         row,col = rtc_dataset.index(x,y)
-        print(f"channel: {str_channel} datetime: {str_datetime} r,c: {row},{col}")
+        #print(f"channel: {str_channel} datetime: {str_datetime} r,c: {row},{col}")
         #band1 = rtc_dataset.read(1)
         # The window will actually load a chunk which is 512x512, and then
         # subselect the 3x3 matrix centered on row,col
@@ -215,19 +200,107 @@ for i in range(0,1):
           vh_data.append(band3x3)
           vh_datetime.append(datetime1)
 
+  # Iterate over datetimes again to compute radar Mahalanobis 2D results
+  # Also generate a radar_alert result 
   dist_ob_list = []
-  dist_ob_dt = []
-  for i,dt in enumerate(vv_datetime):
-    dt_ref1 = dt - td_lookback - td_halfwindow
-    dt_ref2 = dt - td_lookback + td_halfwindow
-    iuse = data_fcns.indices(vv_datetime,
-      lambda x: (x>=dt_ref1 and x <= dt_ref2))
-    print(f"{dt}: {iuse}")
-    if len(iuse) > 0:
-      pre_vv = [vv_data[i] for i in iuse]
-      pre_vh = [vh_data[i] for i in iuse]
+  dist_ob_dt_vv = []
+  dist_ob_dt_vh = []
+  radar_alert_yrdata = [255]*366
+  for i,(dt_vv,dt_vh) in enumerate(zip(vv_datetime,vh_datetime)):
+    dt_vv_ref1 = dt_vv - td_lookback - td_halfwindow
+    dt_vv_ref2 = dt_vv - td_lookback + td_halfwindow
+    dt_vh_ref1 = dt_vh - td_lookback - td_halfwindow
+    dt_vh_ref2 = dt_vh - td_lookback + td_halfwindow
+    iuse_vv = data_fcns.indices(vv_datetime,
+      lambda x: (x >= dt_vv_ref1 and x <= dt_vv_ref2))
+    iuse_vh = data_fcns.indices(vh_datetime,
+      lambda x: (x >= dt_vh_ref1 and x <= dt_vh_ref2))
+    #print(f"{dt_vv}: {iuse_vv}")
+    if len(iuse_vv) > 0 and len(iuse_vh) > 0:
+      pre_vv = [vv_data[i] for i in iuse_vv]
+      pre_vh = [vh_data[i] for i in iuse_vh]
       dist_ob = distmetrics.compute_mahalonobis_dist_2d(pre_vv,pre_vh,
         vv_data[i],vh_data[i],kernel_size=3)
-      dist_ob_list.append(dist_ob)
-      dist_ob_dt.append(dt)
+      # Only the middle point of the 3x3 matrix is valid
+      # The middle point also corresponds to the test site
+      dist_ob_list.append(dist_ob.dist[1][1])
+      dist_ob_dt_vv.append(dt_vv)
+      dist_ob_dt_vh.append(dt_vh)
+      # Populate radar alert results in list covering 366 days
+      # Assuming here that dt_vv == dt_vh always
+      doy = dt_vv.timetuple().tm_yday
+      if dist_ob.dist[1][1] >= dist_threshold:
+        radar_alert_yrdata[doy] = 6
+      else:
+        radar_alert_yrdata[doy] = 0
+  # Finish the radar alert result, putting it into a UMD compatible dict
+  radar_alert[str(site_id)] = radar_alert_yrdata
+  # Add entry to radar_dist list
+  radar_dist.append([site_id,burst_id_upper,dist_ob_list])
       
+# Setup for UMD validation metrics
+
+sampleDict = {}
+sampleDict_sub = {}
+sampleFull = {}
+strata = {}
+with open("sampledpixels1214.csv",'r') as sample:
+  lines = sample.readlines()[1:]
+  for l in lines:
+    (ID,Stratum,Long,Lat,zone,x,y,pixel,pline,centxUTM,centyUTM,MGRS) = l.strip().split(',')
+    sampleDict[ID] = ','.join([Long,Lat,zone,centxUTM,centyUTM])
+    sampleFull[ID] = l.strip()
+    strata[ID] = int(Stratum)
+    if int(ID) in sites_used:
+      sampleDict_sub[ID] = ','.join([Long,Lat,zone,centxUTM,centyUTM])
+
+ids_all = sampleDict.keys()
+ids = sampleDict_sub.keys()
+strataAreas = {}
+strataCounts = {}
+with open("stratatable_0119_z.txt",'r') as file:
+  lines = file.readlines()[1:]
+for l in lines:
+  (s,count,area,K,zcount) = l.strip().split('\t')
+  strataAreas[s] = float(area)
+  strataCounts[s] = int(zcount)
+Nstrata = len(strataCounts)
+
+mapsource = url_maplabels_base
+for cattype in ["confgt50"]:#"gt50","lt50","confgt50","conflt50"]:#["gt50_onlyprov","confgt50_curr","provgt50_curr","gt50","lt50","provgt50","provlt50","gt50_onlyprov","lt50_onlyprov","confgt50","conflt50"]:
+    basename = "v1sample_"+cattype
+    map = umd_fcns.getDISTALERTStatus_vI(mapsource,ALERTname,ids,True)
+    mapsimple = umd_fcns.filterMap(ids,map,cattype)
+    for duration in [15]:#,5,10,15]:
+      for lookback in [30]:#1,15,30]:
+        name = basename+"_lookback"+str(lookback)+"_duration"+str(duration)
+        noLabels = ["OCmin","OCmaj","OCtotal","noChange","VLmin"]
+        ref = umd_fcns.getRefALERTbinaryDaily(["VLmaj","VLtotal"],noLabels)
+        ref1 = ref
+        print("\n"+name)
+        (n,ntotal) = umd_fcns.alertConfusionMatrix_vTS2(ids,cattype,map,ref,strata,strataCounts,duration,[],lookback,name,False)
+        umd_fcns.accuracy(n,ntotal,strataCounts,name,True)
+
+    for duration in [15]:#,5,10,15]:
+      for lookback in [30]:#1,15,30]:
+        name = basename+"_lookback"+str(lookback)+"_duration"+str(duration)+"_VLmin"
+        noLabels = ["OCmin","OCmaj","OCtotal","noChange"]
+        ref = umd_fcns.getRefALERTbinaryDaily(["VLmaj","VLtotal","VLmin"],noLabels)
+        ref2 = ref
+        print("\n"+name)
+        #print(mapsimple['1'])
+        #print(ref['1'])
+        (n,ntotal) = umd_fcns.alertConfusionMatrix_vTS2(ids,cattype,map,ref,strata,strataCounts,duration,[1],lookback,name,False)
+        umd_fcns.accuracy(n,ntotal,strataCounts,name,True)
+
+    # Run UMD validation metrics using radar alert result
+    for duration in [15]:#,5,10,15]:
+      for lookback in [30]:#1,15,30]:
+        name = basename+"_lookback"+str(lookback)+"_duration"+str(duration)
+        noLabels = ["OCmin","OCmaj","OCtotal","noChange","VLmin"]
+        ref = umd_fcns.getRefALERTbinaryDaily(["VLmaj","VLtotal"],noLabels)
+        ref3 = ref
+        print("\n"+"radar:"+name)
+        (n,ntotal) = umd_fcns.alertConfusionMatrix_vTS2(ids,cattype,radar_alert,ref,strata,strataCounts,duration,[],lookback,name,False)
+        umd_fcns.accuracy(n,ntotal,strataCounts,name,True)
+
