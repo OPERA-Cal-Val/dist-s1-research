@@ -10,6 +10,10 @@ conda activate dist-s1
 python -m ipykernel install --user --name dist-s1
 ```
 
+## For GPU support
+
+Use the environment `environment-gpu.yml`. Ostensibly, it removes some of the leafmap/flask dependencies and adds `pytorch-cuda`. I found that conda-forge distributions were most reliable for ensuring cuda compatibility (i.e. cuda driver from GPU with pytorch). Still, the `pytorch` and `nvidia` channels are prioritized, but below `conda-forge`. This is WIP.
+
 ### For bm3d
 
 To use the well-known denoiser, please use Rosetta.

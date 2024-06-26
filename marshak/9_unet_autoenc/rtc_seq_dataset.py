@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 
-def despeckle_one(X: np.ndarray, reg_param=5, noise_floor_db=-22) -> np.ndarray:
+def despeckle_one(X: np.ndarray, reg_param=5, noise_floor_db=-22, preserve_nans=False) -> np.ndarray:
     X_c = np.clip(X, 1e-7, 1)
     X_db = 10 * np.log10(X_c, out=np.full(X_c.shape, np.nan), where=(~np.isnan(X_c)))
     X_db[np.isnan(X_c)] = noise_floor_db
@@ -25,7 +25,8 @@ def despeckle_one(X: np.ndarray, reg_param=5, noise_floor_db=-22) -> np.ndarray:
         X_db, weight=1.0 / reg_param, isotropic=True, eps=1e-3
     )
     X_dspkl = np.power(10, X_db_dspkl / 10.0)
-    X_dspkl[np.isnan(X)] = np.nan
+    if preserve_nans:
+        X_dspkl[np.isnan(X)] = np.nan
     X_dspkl = np.clip(X_dspkl, 0, 1)
     return X_dspkl
 
@@ -205,6 +206,7 @@ class SeqDistDataset(Dataset):
             drop=True
         )
         # Add 1 to index to get post image
+        # df_ts is a dataframe of n_preimgs + 1 in dim 0 to provide metadata for one sample of sequence
         df_ts = df_ts_t.iloc[acq_idx : acq_idx + self.n_pre_imgs + 1].reset_index(
             drop=True
         )
@@ -237,11 +239,14 @@ class SeqDistDataset(Dataset):
             *[read_window_p(url) for url in tqdm(vh_loc, desc="loading vh")]
         )
 
-        vv_data = [despeckle_one(vv) for vv in tqdm(vv_data, desc="tv for vv")]
-        vh_data = [despeckle_one(vh) for vh in tqdm(vh_data, desc="tv for vh")]
+        nodata_masks = [np.isnan(vv) for vv in vv_data]
+        nodata_masks_stack = np.stack(nodata_masks, axis=0).astype(bool)
+
+        vv_data_d = [despeckle_one(vv, preserve_nans=False) for vv in tqdm(vv_data, desc="tv for vv")]
+        vh_data_d= [despeckle_one(vh, preserve_nans=False) for vh in tqdm(vh_data, desc="tv for vh")]
 
         # A list of 2 x H X W imagery
-        acq_data = [np.stack([vv, vh], axis=0) for (vv, vh) in zip(vv_data, vh_data)]
+        acq_data = [np.stack([vv, vh], axis=0) for (vv, vh) in zip(vv_data_d, vh_data_d)]
 
         # Input for modeling
         # pre img is n_pre_imgs X 2 X H X W
@@ -250,12 +255,13 @@ class SeqDistDataset(Dataset):
         post_img = acq_data[-1]
 
         # additional metadata
-        pre_dts = df_ts.iloc[acq_idx : acq_idx + self.n_pre_imgs].acq_datetime.tolist()
+        pre_dts = df_ts.iloc[: self.n_pre_imgs].acq_datetime.tolist()
         post_dt = df_ts.loc[self.n_pre_imgs, "acq_datetime"]
 
         return {
             "pre_imgs": torch.from_numpy(pre_imgs),
             "post_img": torch.from_numpy(post_img),
+            "nodata_masks": torch.from_numpy(nodata_masks_stack),
             "pre_dts": pre_dts,
             "post_dt": post_dt,
             "profile": ps[0],
