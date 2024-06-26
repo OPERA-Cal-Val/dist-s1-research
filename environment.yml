@@ -40,7 +40,7 @@ dependencies:
   - statsmodels
   - kornia
   - backoff
+  - transformers
   - sktime
   - pip:
      - timm
-     - bm3d
