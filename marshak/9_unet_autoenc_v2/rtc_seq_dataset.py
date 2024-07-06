@@ -97,7 +97,7 @@ class SeqDistDataset(Dataset):
         self.root = root
 
         self.rtc_table = rtc_table if rtc_table is not None else open_rtc_table()
-        self.patch_data_dir = patch_data_dir or Path("../6_torch_dataset/burst_patch_data")
+        self.patch_data_dir = patch_data_dir or Path("../6_torch_dataset/burst_patch_data_v2")
 
         self.n_pre_imgs = n_pre_imgs
 
@@ -150,7 +150,7 @@ class SeqDistDataset(Dataset):
                 df_ts = df_ts_full.iloc[i: i + self.n_pre_imgs + 1].reset_index(drop=True)
                 break
 
-        df_burst_patches = gpd.read_file(self.patch_data_dir / f'{burst_id}.geojson')
+        df_burst_patches = pd.read_json(self.patch_data_dir / f'{burst_id}.json')
         M = df_burst_patches.shape[0]
         j = random.randint(0, M)
         patch_data = df_burst_patches.iloc[j].to_dict()
