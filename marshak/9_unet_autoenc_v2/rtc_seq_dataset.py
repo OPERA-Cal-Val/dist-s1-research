@@ -87,27 +87,33 @@ def localize_one_rtc(url: str | Path, ts_dir: str | Path = Path(".")) -> Path:
 class SeqDistDataset(Dataset):
     def __init__(
         self,
-        rtc_table: str = None,
-        patch_data_dir: str = None,
+        df_rtc_meta: str = None,
+        patch_data_path: str = None,
         n_pre_imgs=4,
         root=Path("opera_rtc_data"),
         download=False,
+        min_acq_per_burst: int = 20,
+        patch_size: int = 224
     ):
         self.download = download
         self.root = root
+        self.patch_size = 224
 
-        self.rtc_table = rtc_table if rtc_table is not None else open_rtc_table()
-        self.patch_data_dir = patch_data_dir or Path("../6_torch_dataset/burst_patch_data_v2")
+        df_rtc_meta = df_rtc_meta if df_rtc_meta is not None else open_rtc_table()
+        # Filter
+        df_count = df_rtc_meta.groupby(['jpl_burst_id']).size().reset_index(name="acq_per_burst")
+        self.burst_ids = df_count[df_count.acq_per_burst > min_acq_per_burst].jpl_burst_id
+        self.df_rtc_meta = df_rtc_meta[df_rtc_meta.jpl_burst_id.isin(self.burst_ids)].reset_index(drop=True)
+
+        self.patch_data_path = patch_data_path or Path("../6_torch_dataset/burst_patch_data.pqt")
 
         self.n_pre_imgs = n_pre_imgs
-
-        self.burst_ids = list(self.rtc_table.jpl_burst_id.unique())
 
         if self.download:
             self.download_rtc_data()
 
     def download_rtc_data(self, max_workers=50):
-        n = self.rtc_table.shape[0]
+        n = self.df_rtc_meta.shape[0]
 
         def localize_one_rtc_p(url):
             return localize_one_rtc(url, ts_dir=self.root)
@@ -115,7 +121,7 @@ class SeqDistDataset(Dataset):
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             vv_loc_paths = list(
                 tqdm(
-                    executor.map(localize_one_rtc_p, self.rtc_table.rtc_s1_vv_url),
+                    executor.map(localize_one_rtc_p, self.df_rtc_meta.rtc_s1_vv_url),
                     total=n,
                     desc="downloading vv",
                 )
@@ -123,14 +129,14 @@ class SeqDistDataset(Dataset):
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             vh_loc_paths = list(
                 tqdm(
-                    executor.map(localize_one_rtc_p, self.rtc_table.rtc_s1_vh_url),
+                    executor.map(localize_one_rtc_p, self.df_rtc_meta.rtc_s1_vh_url),
                     total=n,
                     desc="downloading vh",
                 )
             )
 
-        self.rtc_table["rtc_s1_vv_loc_path"] = [str(p) for p in vv_loc_paths]
-        self.rtc_table["rtc_s1_vh_loc_path"] = [str(p) for p in vh_loc_paths]
+        self.df_rtc_meta["rtc_s1_vv_loc_path"] = [str(p) for p in vv_loc_paths]
+        self.df_rtc_meta["rtc_s1_vh_loc_path"] = [str(p) for p in vh_loc_paths]
 
     def __len__(self):
         return len(self.burst_ids)
@@ -138,19 +144,14 @@ class SeqDistDataset(Dataset):
     def __getitem__(self, idx):
 
         burst_id = self.burst_ids[idx]
-        while True:
-            df_ts_full = self.rtc_table[self.rtc_table.jpl_burst_id == burst_id].reset_index(drop=True)
-            n_acqs_for_burst = df_ts_full.shape[0]
-            # 20 is arbitrary - but don't want time series with less than 20 acquisitions over 2 years time.
-            if n_acqs_for_burst < max(20, self.n_pre_imgs + 1):
-                continue
-            else:
-                N = df_ts_full.shape[0] - self.n_pre_imgs - 1
-                i = random.randint(0, N)
-                df_ts = df_ts_full.iloc[i: i + self.n_pre_imgs + 1].reset_index(drop=True)
-                break
 
-        df_burst_patches = pd.read_json(self.patch_data_dir / f'{burst_id}.json')
+        df_ts_full = self.df_rtc_meta[self.df_rtc_meta.jpl_burst_id == burst_id].reset_index(drop=True)
+        df_burst_patches = pd.read_parquet(self.patch_data_path,
+                                           filters=[('jpl_burst_id', '=', burst_id)])
+        N = df_ts_full.shape[0] - self.n_pre_imgs - 1
+        i = random.randint(0, N)
+        df_ts = df_ts_full.iloc[i: i + self.n_pre_imgs + 1].reset_index(drop=True)
+
         M = df_burst_patches.shape[0]
         j = random.randint(0, M)
         patch_data = df_burst_patches.iloc[j].to_dict()
@@ -160,8 +161,8 @@ class SeqDistDataset(Dataset):
                 url,
                 patch_data["x_start"],
                 patch_data["y_start"],
-                patch_data["x_stop"],
-                patch_data["y_stop"],
+                patch_data["x_start"] + self.patch_size,
+                patch_data["y_start"] + self.patch_size,
             )
 
         vv_loc = df_ts.rtc_s1_vv_url if not self.download else df_ts.rtc_s1_vv_loc_path
