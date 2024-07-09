@@ -58,6 +58,7 @@ def get_last_obs_date_before_change(row):
 def indices(list, filtr=lambda x: bool(x)):
     return [i for i,x in enumerate(list) if filtr(x)]
 
+
 #def first(iterable, condition = lambda x: True):
 #  return next(x for x in iterable if condition(x))
 
