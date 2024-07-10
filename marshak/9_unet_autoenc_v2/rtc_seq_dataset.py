@@ -102,7 +102,7 @@ class SeqDistDataset(Dataset):
         df_rtc_meta = df_rtc_meta if df_rtc_meta is not None else open_rtc_table()
         # Filter
         df_count = df_rtc_meta.groupby(['jpl_burst_id']).size().reset_index(name="acq_per_burst")
-        self.burst_ids = df_count[df_count.acq_per_burst > min_acq_per_burst].jpl_burst_id
+        self.burst_ids = df_count[df_count.acq_per_burst > min_acq_per_burst].jpl_burst_id.tolist()
         self.df_rtc_meta = df_rtc_meta[df_rtc_meta.jpl_burst_id.isin(self.burst_ids)].reset_index(drop=True)
 
         self.patch_data_path = patch_data_path or Path("../6_torch_dataset/burst_patch_data.pqt")
