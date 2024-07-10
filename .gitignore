@@ -77,6 +77,9 @@ marshak/**/*.png
 *.parquet
 *.pqt
 
+# Ignore data
+**/opera_rtc_data/
+
 # Data files to include
 !marshak/3_dist_sites/slcs_for_processing.csv.zip
 !marshak/4_rtc_organization/rtc_s1_table.json.zip
