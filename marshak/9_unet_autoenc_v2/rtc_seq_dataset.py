@@ -92,7 +92,6 @@ class SeqDistDataset(Dataset):
         n_pre_imgs=4,
         root=Path("opera_rtc_data"),
         download=False,
-        min_acq_per_burst: int = 20,
     ):
         self.download = download
         self.root = root
