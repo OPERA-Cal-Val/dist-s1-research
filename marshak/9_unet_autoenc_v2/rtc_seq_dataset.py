@@ -35,7 +35,7 @@ def despeckle_one(X: np.ndarray, reg_param=5, noise_floor_db=-22, preserve_nans=
 
 @lru_cache
 def open_rtc_table() -> pd.DataFrame:
-    return pd.read_json("../4_rtc_organization/rtc_s1_table.json.zip")
+    return pd.read_parquet('rtc_data_subset.parquet')
 
 
 def read_window(url: str, x_start, y_start, x_stop, y_stop) -> np.ndarray:
@@ -93,20 +93,15 @@ class SeqDistDataset(Dataset):
         root=Path("opera_rtc_data"),
         download=False,
         min_acq_per_burst: int = 20,
-        patch_size: int = 224
     ):
         self.download = download
         self.root = root
         self.patch_size = 224
 
-        df_rtc_meta = df_rtc_meta if df_rtc_meta is not None else open_rtc_table()
+        self.df_rtc_meta = df_rtc_meta if df_rtc_meta is not None else open_rtc_table()
         # Filter
-        df_count = df_rtc_meta.groupby(['jpl_burst_id']).size().reset_index(name="acq_per_burst")
-        self.burst_ids = df_count[df_count.acq_per_burst > min_acq_per_burst].jpl_burst_id.tolist()
-        self.df_rtc_meta = df_rtc_meta[df_rtc_meta.jpl_burst_id.isin(self.burst_ids)].reset_index(drop=True)
-
+        self.burst_ids = self.df_rtc_meta.jpl_burst_id.unique().tolist()
         self.patch_data_path = patch_data_path or Path("../6_torch_dataset/burst_patch_data.pqt")
-
         self.n_pre_imgs = n_pre_imgs
 
         if self.download:
