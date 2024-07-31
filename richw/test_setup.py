@@ -32,6 +32,7 @@ def setup(dir_base):
   dir_dist_s1_validation_harness = dir_base + '/dist-s1-validation-harness'
   dir_rtc_tables = dir_dist_s1_validation_harness + '/data'
 
+  filename_rtc_tables = dir_rtc_tables + '/validation_bursts_v1_coverage_updated.parquet'
   filename_burst_id = 'opera_burst_ids.geojson.zip'
   url_burst_id = 'https://github.com/opera-adt/burst_db/releases/download/v0.3.1/burst-id-geometries-simple-0.3.1.geojson.zip'
   filename_slcs_for_processing = 'slcs_for_processing.csv.zip'
@@ -83,8 +84,10 @@ def setup(dir_base):
 
   # Join burst table with site id table
   # Following marshak/3_dist_sites/dist_hls_validation_table.ipynb
-  df_val_bursts = gpd.sjoin(df_burst, df_sites, how='inner',
-    predicate='intersects').reset_index(drop=True)
+  #df_val_bursts = gpd.sjoin(df_burst, df_sites, how='inner',
+  #  predicate='intersects').reset_index(drop=True)
+  # New table list
+  df_val_bursts = gpd.read_parquet(filename_rtc_tables)
   df_val_bursts = df_val_bursts.drop_duplicates()
   df_val_bursts = df_val_bursts.drop(columns=['index_right'])
   df_val_bursts['track_number'] = df_val_bursts.burst_id_jpl.map(
