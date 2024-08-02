@@ -40,10 +40,13 @@ def setup(dir_base):
   url_maplabels_base = 'https://raw.githubusercontent.com/OPERA-Cal-Val/DIST-Validation/main/mapLabelsv1sample'
   filename_rtc_s1_table = 'rtc_s1_table.json.zip'
   dir_rtc_data = '/u/aurora-r0/cmarshak/dist-s1-research/marshak/6_torch_dataset/opera_rtc_data'
-  #dir_rtc_site_data = dir_dist_s1_research + '/oliver/rtc_analysis/tables'
-  dir_rtc_site_data = dir_dist_s1_validation_harness + '/data/rtc_ts_by_site'
+  dir_rtc_site_data = dir_dist_s1_research + '/oliver/rtc_analysis/tables'
+  dir_rtc_site_plots = dir_dist_s1_research + '/oliver/rtc_analysis/plots'
+  #dir_rtc_site_data = dir_dist_s1_validation_harness + '/data/rtc_ts_by_site'
   print(f"Using rtc site data from: {dir_rtc_site_data}")
-  basename_rtc_site_data = 'rtc_summary_burst_'
+  #basename_rtc_site_data = 'rtc_summary_burst_'
+  basename_rtc_site_data = 'rtc_summary_site_'
+  filename_burst_table = 'validation_bursts_v1_coverage_updated.parquet'
 
   url_maplabels_base = 'https://raw.githubusercontent.com/OPERA-Cal-Val/DIST-Validation/main/mapLabelsv1sample'
   ALERTname = "v1sample"
@@ -82,28 +85,30 @@ def setup(dir_base):
   # Write the site table to a geojson file
   df_sites.to_file('dist_hls_val_sites.geojson', driver='GeoJSON')
 
+  # Load new burst table (parquet read)
+  df_val_bursts = gpd.read_parquet(filename_burst_table)
   # Join burst table with site id table
   # Following marshak/3_dist_sites/dist_hls_validation_table.ipynb
   #df_val_bursts = gpd.sjoin(df_burst, df_sites, how='inner',
   #  predicate='intersects').reset_index(drop=True)
   # New table list
-  df_val_bursts = gpd.read_parquet(filename_rtc_tables)
-  df_val_bursts = df_val_bursts.drop_duplicates()
-  df_val_bursts = df_val_bursts.drop(columns=['index_right'])
-  df_val_bursts['track_number'] = df_val_bursts.burst_id_jpl.map(
-    lambda burst_id_jpl: int(burst_id_jpl.split('_')[0][1:]))
+  #df_val_bursts = gpd.read_parquet(filename_rtc_tables)
+  #df_val_bursts = df_val_bursts.drop_duplicates()
+  #df_val_bursts = df_val_bursts.drop(columns=['index_right'])
+  #df_val_bursts['track_number'] = df_val_bursts.burst_id_jpl.map(
+  #  lambda burst_id_jpl: int(burst_id_jpl.split('_')[0][1:]))
+  #df_val_bursts.rename(columns={'burst_id_jpl': 'jpl_burst_id'}, inplace=True)
   df_val_bursts = df_val_bursts.sort_values(by=['site_id',
-    'burst_id_jpl']).reset_index(drop=True)
-  df_val_bursts.rename(columns={'burst_id_jpl': 'jpl_burst_id'}, inplace=True)
+    'jpl_burst_id']).reset_index(drop=True)
 
   #df_val_bursts['jpl_burst_id'] = df_val_bursts.applymap(lambda x: 
-  for index,row in df_val_bursts.iterrows():
+  #for index,row in df_val_bursts.iterrows():
     # Convert jpl_burst_id (uppercase,dashes) 
-    burst_id = row['jpl_burst_id']
-    burst_id_d = burst_id.replace("_","-")
-    burst_id_upper = burst_id_d.upper()
+  #  burst_id = row['jpl_burst_id']
+  #  burst_id_d = burst_id.replace("_","-")
+  #  burst_id_upper = burst_id_d.upper()
     #df_val_bursts.at['jpl_burst_id',index] = burst_id_upper
-    df_val_bursts['jpl_burst_id'][index] = burst_id_upper
+  #  df_val_bursts['jpl_burst_id'][index] = burst_id_upper
     #df_val_bursts['jpl_burst_id'].replace(burst_id,burst_id_upper)
   
   # Subset of sites
@@ -114,9 +119,12 @@ def setup(dir_base):
   df_sites_subset = df_sites[df_sites.site_id.isin(sites_used)].reset_index(drop=True)
   # Write site subset table
   df_sites_subset.to_file('sites_for_processing_may_2024.geojson', driver='GeoJSON')
-  df_val_bursts_subset = df_val_bursts[
-    df_val_bursts.site_id.isin(sites_used)].reset_index(drop=True)
-  df_val_bursts_subset.to_file('val_bursts.geojson', driver='GeoJSON')
+
+  # Parquet read burst file is already subset.
+  df_val_bursts_subset = df_val_bursts
+  #df_val_bursts_subset = df_val_bursts[
+  #  df_val_bursts.site_id.isin(sites_used)].reset_index(drop=True)
+  #df_val_bursts_subset.to_file('val_bursts.geojson', driver='GeoJSON')
 
   # Load RTC Table
   # Read the table made by CM
@@ -127,5 +135,4 @@ def setup(dir_base):
   # however, only one will be present in df_rtc.  When selecting the bursts,
   # only one per site was chosen (the one with the site near the middle).
 
-  return df_rtc,df_val_bursts_subset,df_sites_subset,dir_rtc_site_data,basename_rtc_site_data
-
+  return df_rtc,df_val_bursts_subset,df_sites_subset,dir_rtc_site_data,dir_rtc_site_plots,basename_rtc_site_data

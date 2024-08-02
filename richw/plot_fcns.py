@@ -45,12 +45,14 @@ def plot_rtc(df_rtc_ts_wind,figfile,df_site):
 
   last_observed_time = df_site['last_observation_time'][0]
 
-  if last_observed_time == pd.NaT:
+  if not pd.isnull(last_observed_time):
     ax1.axvline(x=last_observed_time, color='b', linestyle='--', label=f'Last observation time ({last_observed_time})')
   ax2.legend(loc='upper left')
 
   change_time = df_site['change_time'][0]
-  ax1.axvline(x=change_time, color='r', linestyle='--', label=f'Change time ({change_time})')
+  if not pd.isnull(change_time):
+    ax1.axvline(x=change_time, color='r', linestyle='--', label=f'Change time ({change_time})')
+
   ax1.legend()
   fig.savefig(figfile,dpi=300,bbox_inches="tight")
   plt.close(fig)
