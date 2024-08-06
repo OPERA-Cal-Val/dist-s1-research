@@ -115,6 +115,7 @@ def setup(dir_base):
   # Read the table made by CM
   # marshak/3_dist_sites/dist_hls_validation_table.ipynb
   df_slcs = pd.read_csv(filename_slcs_for_processing)
+  df_slcs['jpl_burst_id'] = df_slcs.jpl_burst_id.map(lambda burst_id: burst_id.upper().replace('_','-'))
   sites_used = df_slcs.site_id.unique()
   df_sites_subset = df_sites[df_sites.site_id.isin(sites_used)].reset_index(drop=True)
   # Write site subset table
@@ -135,4 +136,4 @@ def setup(dir_base):
   # however, only one will be present in df_rtc.  When selecting the bursts,
   # only one per site was chosen (the one with the site near the middle).
 
-  return df_rtc,df_val_bursts_subset,df_sites_subset,dir_rtc_site_data,dir_rtc_site_plots,basename_rtc_site_data
+  return df_rtc,df_val_bursts_subset,df_sites_subset,df_slcs,df_burst,dir_rtc_site_data,dir_rtc_site_plots,basename_rtc_site_data
