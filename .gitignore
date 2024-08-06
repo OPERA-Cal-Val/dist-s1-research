@@ -92,3 +92,9 @@ marshak/**/*.png
 !marshak/3_dist_sites/validation_bursts_all_v2.parquet
 !marshak/3_dist_sites/validation_bursts_all_v1.parquet
 !marshak/4_rtc_organization/validation_bursts_v1_coverage_updated.parquet
+
+!marshak/11_dataloader_v3/patch_data/burst_patch_table_16.parquet
+!marshak/11_dataloader_v3/patch_data/burst_patch_table_32.parquet
+!marshak/11_dataloader_v3/patch_data/burst_patch_table_64.parquet
+!marshak/11_dataloader_v3/patch_data/burst_patch_table_128.parquet
+!marshak/11_dataloader_v3/patch_data/burst_patch_table_224.parquet
