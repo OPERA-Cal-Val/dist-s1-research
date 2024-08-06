@@ -79,6 +79,7 @@ marshak/**/*.png
 
 # Ignore data
 **/opera_rtc_data/
+**/opera_rtc_data_*/
 
 # Data files to include
 !marshak/3_dist_sites/slcs_for_processing.csv.zip
