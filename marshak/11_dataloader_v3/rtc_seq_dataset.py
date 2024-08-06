@@ -153,20 +153,23 @@ class SeqDistDataset(Dataset):
     def __init__(
         self,
         df_rtc_meta: str = None,
-        patch_data_path: str = None,
+        patch_size: int = 16,
         n_pre_imgs: int = 4,
         root: Path | str = Path("opera_rtc_data"),
         n_workers_for_download: int = 20,
     ):
         self.root = root
-        self.patch_size = 224
 
-        self.patch_data_path = patch_data_path or 'burst_patch_table.parquet'
+        self.patch_data_dir = Path('patch_data')
+        if not self.patch_data_dir.exists():
+            raise ValueError(f'{self.patch_data_dir} does not exist')
+        self.patch_data_sizes = sorted([int(p.stem.split('_')[-1]) for p in self.patch_data_dir.glob('*.parquet')])
+        if patch_size not in self.patch_data_sizes:
+            raise ValueError(f'{patch_size} is not in {",".join(self.patch_data_sizes)}')
+        self.patch_size = patch_size
 
         self.df_rtc_meta = df_rtc_meta if df_rtc_meta is not None else open_rtc_table()
-        self.df_patch = pd.read_parquet(self.patch_data_path)
-
-        self.generate_spatio_temporal_sample_data()
+        self.df_patch = pd.read_parquet(self.patch_data_dir / f'burst_patch_table_{patch_size}.parquet')
 
         self.n_pre_imgs = n_pre_imgs
 
@@ -174,7 +177,14 @@ class SeqDistDataset(Dataset):
         target_cpus = min(mp.cpu_count(), n_workers_for_download)
         self.n_workers_for_download = target_cpus
 
+        self.patch_by_burst_data_dir = Path('patch_by_burst_tables')
+        self.patch_by_burst_data_dir.mkdir(exist_ok=True, parents=True)
+
+        self.rtc_by_burst_data_dir = Path('rtc_by_burst_tables')
+        self.rtc_by_burst_data_dir.mkdir(exist_ok=True, parents=True)
+
         self.download_rtc_data()
+        self.generate_spatio_temporal_sample_data()
 
     def generate_spatio_temporal_sample_data(self):
         df_date_count_by_burst = self.df_rtc_meta.groupby('jpl_burst_id').size().reset_index(drop=False).rename(columns={0: 'acq_per_burst'})
@@ -186,11 +196,12 @@ class SeqDistDataset(Dataset):
 
         self.df_st_sample = df_count_rtc
         self.burst_ids = self.df_st_sample.jpl_burst_id.unique().tolist()
-        self.df_patch = self.df_patch[self.df_patch.jpl_burst_id.isin(self.burst_ids)].reset_index(drop=True)
         self.df_rtc_meta = self.df_rtc_meta[self.df_rtc_meta.jpl_burst_id.isin(self.burst_ids)].reset_index(drop=True)
 
+        self.df_patch = None
+        self.df_rtc_meta = None
+
     def download_rtc_data(self):
-        # n = self.df_rtc_meta.shape[0]
 
         def localize_one_rtc_p(*urls):
             return localize_one_rtc(urls, ts_dir=self.root)
@@ -206,6 +217,27 @@ class SeqDistDataset(Dataset):
             )
 
         self.df_rtc_meta["rtc_s1_stack_loc_path"] = [str(p) for p in dual_loc_path]
+
+        self.patch_by_burst_data_dir.mkdir(exist_ok=True, parents=True)
+        burst_ids = self.df_rtc_meta.jpl_burst_id.unique().tolist()
+        for burst_id in tqdm(burst_ids, desc="localize patch tables"):
+            patch_out_path = self.patch_by_burst_data_dir / f'patch_{burst_id}.parquet'
+            if patch_out_path.exists():
+                continue
+            else:
+                df_burst_patches = self.df_patch[self.df_patch.jpl_burst_id == burst_id].reset_index(drop=True)
+                df_burst_patches.to_parquet(
+                    patch_out_path, compression="snappy", engine="pyarrow"
+                )
+
+            rtc_out_path = self.rtc_by_burst_data_dir / f'rtc_{burst_id}.parquet'
+            if rtc_out_path.exists():
+                continue
+            else:
+                df_rtc_ts = self.df_rtc_meta[self.df_rtc_meta.jpl_burst_id == burst_id].reset_index(drop=True)
+                df_rtc_ts.to_parquet(
+                    rtc_out_path, compression="snappy", engine="pyarrow"
+                )
 
     def __len__(self):
         return self.df_st_sample.total_samples_per_burst.sum()
@@ -229,9 +261,9 @@ class SeqDistDataset(Dataset):
         assert total_samples_running_idx <= idx
 
         acq_idx = (idx - total_samples_running_idx) % acq_for_burst_lookup
-        df_ts_t = self.df_rtc_meta[self.df_rtc_meta.jpl_burst_id == burst_id].reset_index(
-            drop=True
-        )
+        rtc_ts_path = self.rtc_by_burst_data_dir / f'rtc_{burst_id}.parquet'
+        df_ts_t = pd.read_parquet(rtc_ts_path)
+
         # Add 1 to index to get post image
         # df_ts is a dataframe of n_preimgs + 1 in dim 0 to provide metadata for one sample of sequence
         df_ts = df_ts_t.iloc[acq_idx : acq_idx + self.n_pre_imgs + 1].reset_index(
@@ -242,9 +274,9 @@ class SeqDistDataset(Dataset):
         ), f"Issue with {idx=}, {burst_idx=}"
 
         patch_idx = (idx - total_samples_running_idx) % patches_for_burst
-        df_patch_burst = self.df_patch[
-            self.df_patch.jpl_burst_id == burst_id
-        ].reset_index(drop=True)
+
+        patch_path = self.patch_by_burst_data_dir / f'patch_{burst_id}.parquet'
+        df_patch_burst = pd.read_parquet(patch_path)
         patch_data = df_patch_burst.iloc[patch_idx].to_dict()
 
         # return torch.zeros((3, 3))
