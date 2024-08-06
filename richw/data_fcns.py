@@ -2,6 +2,8 @@
 
 import pandas as pd
 import geopandas as gpd
+import ast
+import numpy as np
 
 # Functions to access/manipulate OPERA data
 
@@ -58,6 +60,12 @@ def get_last_obs_date_before_change(row):
 def indices(list, filtr=lambda x: bool(x)):
     return [i for i,x in enumerate(list) if filtr(x)]
 
+def convert_to_list(v):
+    if isinstance(v, str):
+        v1 = ast.literal_eval(v.replace('nan','None'))
+        v2 = [np.nan if x == None else x for x in v1]
+        return v2
+    return v
 
 #def first(iterable, condition = lambda x: True):
 #  return next(x for x in iterable if condition(x))
