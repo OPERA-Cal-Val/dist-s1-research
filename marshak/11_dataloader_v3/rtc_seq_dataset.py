@@ -151,7 +151,7 @@ def localize_one_rtc_with_slice(
 class SeqDistDataset(Dataset):
     def __init__(
         self,
-        df_rtc_meta: str = None,
+        rtc_s1_parquet_table_path: str | Path = None,
         patch_size: int = 16,
         n_pre_imgs: int = 4,
         root: Path | str = Path("opera_rtc_data"),
@@ -171,7 +171,11 @@ class SeqDistDataset(Dataset):
             )
         self.patch_size = patch_size
 
-        self.df_rtc_meta = df_rtc_meta if df_rtc_meta is not None else open_rtc_table()
+        self.df_rtc_meta = (
+            pd.read_parquet(rtc_s1_parquet_table_path)
+            if rtc_s1_parquet_table_path is not None
+            else open_rtc_table()
+        )
         self.df_patch = pd.read_parquet(
             self.patch_data_dir / f"burst_patch_table_{patch_size}.parquet"
         )
