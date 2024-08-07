@@ -35,7 +35,7 @@ def despeckle_one(
 
 @lru_cache
 def open_rtc_table() -> pd.DataFrame:
-    return pd.read_parquet("rtc_data_subset.parquet")
+    return pd.read_parquet("rtc_s1_tables/rtc_s1_data_val_bursts.parquet")
 
 
 def read_raster_from_slice(
@@ -148,7 +148,6 @@ def localize_one_rtc_with_slice(
     return out_path
 
 
-
 class SeqDistDataset(Dataset):
     def __init__(
         self,
@@ -160,16 +159,22 @@ class SeqDistDataset(Dataset):
     ):
         self.root = root
 
-        self.patch_data_dir = Path('patch_data')
+        self.patch_data_dir = Path("patch_data")
         if not self.patch_data_dir.exists():
-            raise ValueError(f'{self.patch_data_dir} does not exist')
-        self.patch_data_sizes = sorted([int(p.stem.split('_')[-1]) for p in self.patch_data_dir.glob('*.parquet')])
+            raise ValueError(f"{self.patch_data_dir} does not exist")
+        self.patch_data_sizes = sorted(
+            [int(p.stem.split("_")[-1]) for p in self.patch_data_dir.glob("*.parquet")]
+        )
         if patch_size not in self.patch_data_sizes:
-            raise ValueError(f'{patch_size} is not in {",".join(self.patch_data_sizes)}')
+            raise ValueError(
+                f'{patch_size} is not in {",".join(self.patch_data_sizes)}'
+            )
         self.patch_size = patch_size
 
         self.df_rtc_meta = df_rtc_meta if df_rtc_meta is not None else open_rtc_table()
-        self.df_patch = pd.read_parquet(self.patch_data_dir / f'burst_patch_table_{patch_size}.parquet')
+        self.df_patch = pd.read_parquet(
+            self.patch_data_dir / f"burst_patch_table_{patch_size}.parquet"
+        )
 
         self.n_pre_imgs = n_pre_imgs
 
@@ -177,36 +182,62 @@ class SeqDistDataset(Dataset):
         target_cpus = min(mp.cpu_count(), n_workers_for_download)
         self.n_workers_for_download = target_cpus
 
-        self.patch_by_burst_data_dir = Path('patch_by_burst_tables')
+        self.patch_by_burst_data_dir = Path("patch_by_burst_tables")
         self.patch_by_burst_data_dir.mkdir(exist_ok=True, parents=True)
 
-        self.rtc_by_burst_data_dir = Path('rtc_by_burst_tables')
+        self.rtc_by_burst_data_dir = Path("rtc_by_burst_tables")
         self.rtc_by_burst_data_dir.mkdir(exist_ok=True, parents=True)
 
         self.download_rtc_data()
         self.generate_spatio_temporal_sample_data()
 
     def generate_spatio_temporal_sample_data(self):
-        df_date_count_by_burst = self.df_rtc_meta.groupby('jpl_burst_id').size().reset_index(drop=False).rename(columns={0: 'acq_per_burst'})
-        df_patch_count_by_burst = self.df_patch.groupby('jpl_burst_id').size().reset_index(drop=False).rename(columns={0: 'patches_per_burst'})
+        df_date_count_by_burst = (
+            self.df_rtc_meta.groupby("jpl_burst_id")
+            .size()
+            .reset_index(drop=False)
+            .rename(columns={0: "acq_per_burst"})
+        )
+        df_patch_count_by_burst = (
+            self.df_patch.groupby("jpl_burst_id")
+            .size()
+            .reset_index(drop=False)
+            .rename(columns={0: "patches_per_burst"})
+        )
 
-        df_count_rtc = pd.merge(df_date_count_by_burst, df_patch_count_by_burst, on='jpl_burst_id', how='inner')
-        df_count_rtc['total_samples_per_burst'] = df_count_rtc['acq_per_burst'] * df_count_rtc['patches_per_burst']
-        df_count_rtc['total_samples_cumul'] = df_count_rtc.total_samples_per_burst.cumsum()
+        df_count_rtc = pd.merge(
+            df_date_count_by_burst,
+            df_patch_count_by_burst,
+            on="jpl_burst_id",
+            how="inner",
+        )
+        df_count_rtc["total_samples_per_burst"] = (
+            df_count_rtc["acq_per_burst"] * df_count_rtc["patches_per_burst"]
+        )
+        df_count_rtc["total_samples_cumul"] = (
+            df_count_rtc.total_samples_per_burst.cumsum()
+        )
 
         self.df_st_sample = df_count_rtc
         self.burst_ids = self.df_st_sample.jpl_burst_id.unique().tolist()
-        self.df_rtc_meta = self.df_rtc_meta[self.df_rtc_meta.jpl_burst_id.isin(self.burst_ids)].reset_index(drop=True)
+        self.df_rtc_meta = self.df_rtc_meta[
+            self.df_rtc_meta.jpl_burst_id.isin(self.burst_ids)
+        ].reset_index(drop=True)
 
         self.df_patch = None
         self.df_rtc_meta = None
 
     def download_rtc_data(self):
-
         def localize_one_rtc_p(*urls):
             return localize_one_rtc(urls, ts_dir=self.root)
 
-        input_data = [[vv_path, vh_path] for (vv_path, vh_path) in zip(self.df_rtc_meta.rtc_s1_vv_url.tolist(), self.df_rtc_meta.rtc_s1_vh_url.tolist())]
+        input_data = [
+            [vv_path, vh_path]
+            for (vv_path, vh_path) in zip(
+                self.df_rtc_meta.rtc_s1_vv_url.tolist(),
+                self.df_rtc_meta.rtc_s1_vh_url.tolist(),
+            )
+        ]
         with WorkerPool(n_jobs=self.n_workers_for_download, use_dill=True) as pool:
             dual_loc_path = pool.map(
                 localize_one_rtc_p,
@@ -221,20 +252,24 @@ class SeqDistDataset(Dataset):
         self.patch_by_burst_data_dir.mkdir(exist_ok=True, parents=True)
         burst_ids = self.df_rtc_meta.jpl_burst_id.unique().tolist()
         for burst_id in tqdm(burst_ids, desc="localize patch tables"):
-            patch_out_path = self.patch_by_burst_data_dir / f'patch_{burst_id}.parquet'
+            patch_out_path = self.patch_by_burst_data_dir / f"patch_{burst_id}.parquet"
             if patch_out_path.exists():
                 continue
             else:
-                df_burst_patches = self.df_patch[self.df_patch.jpl_burst_id == burst_id].reset_index(drop=True)
+                df_burst_patches = self.df_patch[
+                    self.df_patch.jpl_burst_id == burst_id
+                ].reset_index(drop=True)
                 df_burst_patches.to_parquet(
                     patch_out_path, compression="snappy", engine="pyarrow"
                 )
 
-            rtc_out_path = self.rtc_by_burst_data_dir / f'rtc_{burst_id}.parquet'
+            rtc_out_path = self.rtc_by_burst_data_dir / f"rtc_{burst_id}.parquet"
             if rtc_out_path.exists():
                 continue
             else:
-                df_rtc_ts = self.df_rtc_meta[self.df_rtc_meta.jpl_burst_id == burst_id].reset_index(drop=True)
+                df_rtc_ts = self.df_rtc_meta[
+                    self.df_rtc_meta.jpl_burst_id == burst_id
+                ].reset_index(drop=True)
                 df_rtc_ts.to_parquet(
                     rtc_out_path, compression="snappy", engine="pyarrow"
                 )
@@ -243,8 +278,9 @@ class SeqDistDataset(Dataset):
         return self.df_st_sample.total_samples_per_burst.sum()
 
     def __getitem__(self, idx):
-
-        burst_idx = bisect.bisect_left(self.df_st_sample.total_samples_cumul.tolist(), idx)
+        burst_idx = bisect.bisect_left(
+            self.df_st_sample.total_samples_cumul.tolist(), idx
+        )
         assert self.df_st_sample.iloc[burst_idx].total_samples_cumul >= idx
 
         burst_id = self.df_st_sample.iloc[burst_idx].jpl_burst_id
@@ -256,12 +292,14 @@ class SeqDistDataset(Dataset):
 
         # Key here is we need the n samples < idx to determine how to sample patch and acq time
         total_samples_running_idx = (
-            self.df_st_sample.iloc[burst_idx - 1].total_samples_cumul if burst_idx > 0 else 0
+            self.df_st_sample.iloc[burst_idx - 1].total_samples_cumul
+            if burst_idx > 0
+            else 0
         )
         assert total_samples_running_idx <= idx
 
         acq_idx = (idx - total_samples_running_idx) % acq_for_burst_lookup
-        rtc_ts_path = self.rtc_by_burst_data_dir / f'rtc_{burst_id}.parquet'
+        rtc_ts_path = self.rtc_by_burst_data_dir / f"rtc_{burst_id}.parquet"
         df_ts_t = pd.read_parquet(rtc_ts_path)
 
         # Add 1 to index to get post image
@@ -275,7 +313,7 @@ class SeqDistDataset(Dataset):
 
         patch_idx = (idx - total_samples_running_idx) % patches_for_burst
 
-        patch_path = self.patch_by_burst_data_dir / f'patch_{burst_id}.parquet'
+        patch_path = self.patch_by_burst_data_dir / f"patch_{burst_id}.parquet"
         df_patch_burst = pd.read_parquet(patch_path)
         patch_data = df_patch_burst.iloc[patch_idx].to_dict()
 
