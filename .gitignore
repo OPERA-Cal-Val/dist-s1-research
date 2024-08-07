@@ -80,6 +80,7 @@ marshak/**/*.png
 # Ignore data
 **/opera_rtc_data/
 **/opera_rtc_data_*/
+**/opera_rtc_img_data/
 
 # Data files to include
 !marshak/3_dist_sites/slcs_for_processing.csv.zip
@@ -98,3 +99,8 @@ marshak/**/*.png
 !marshak/11_dataloader_v3/patch_data/burst_patch_table_64.parquet
 !marshak/11_dataloader_v3/patch_data/burst_patch_table_128.parquet
 !marshak/11_dataloader_v3/patch_data/burst_patch_table_224.parquet
+
+!marshak/11_dataloader_v3/rtc_s1_tables/rtc_s1_table.parquet
+!marshak/11_dataloader_v3/rtc_s1_tables/validation_bursts_v1_coverage_updated.parquet
+!marshak/11_dataloader_v3/rtc_s1_tables/rtc_data_subset_startidx40_stopidx45.parquet
+!marshak/11_dataloader_v3/rtc_s1_tables/rtc_s1_data_val_bursts.parquet
