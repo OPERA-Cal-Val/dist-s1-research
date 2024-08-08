@@ -1,4 +1,5 @@
 import bisect
+import multiprocessing as mp
 from functools import lru_cache
 from pathlib import Path
 
@@ -7,14 +8,13 @@ import numpy as np
 import pandas as pd
 import rasterio
 import torch
+from mpire import WorkerPool
 from rasterio.profiles import DefaultGTiffProfile
 from rasterio.windows import Window
 from requests.exceptions import HTTPError
 from skimage.restoration import denoise_tv_bregman
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from mpire import WorkerPool
-import multiprocessing as mp
 
 
 def despeckle_one(
@@ -155,7 +155,7 @@ class SeqDistDataset(Dataset):
         patch_size: int = 16,
         n_pre_imgs: int = 4,
         root: Path | str = Path("opera_rtc_data"),
-        n_workers_for_download: int = 20,
+        n_workers_for_download: int = 5,
     ):
         self.root = root
 
@@ -256,7 +256,7 @@ class SeqDistDataset(Dataset):
         self.patch_by_burst_data_dir.mkdir(exist_ok=True, parents=True)
         burst_ids = self.df_rtc_meta.jpl_burst_id.unique().tolist()
         for burst_id in tqdm(burst_ids, desc="localize patch tables"):
-            patch_out_path = self.patch_by_burst_data_dir / f"patch_{burst_id}.parquet"
+            patch_out_path = self.patch_by_burst_data_dir / f"patch_{burst_id}_{self.patch_size}.parquet"
             if patch_out_path.exists():
                 continue
             else:
@@ -308,7 +308,7 @@ class SeqDistDataset(Dataset):
 
         # Add 1 to index to get post image
         # df_ts is a dataframe of n_preimgs + 1 in dim 0 to provide metadata for one sample of sequence
-        df_ts = df_ts_t.iloc[acq_idx : acq_idx + self.n_pre_imgs + 1].reset_index(
+        df_ts = df_ts_t.iloc[acq_idx: acq_idx + self.n_pre_imgs + 1].reset_index(
             drop=True
         )
         assert df_ts.shape[0] == (
@@ -317,7 +317,7 @@ class SeqDistDataset(Dataset):
 
         patch_idx = (idx - total_samples_running_idx) % patches_for_burst
 
-        patch_path = self.patch_by_burst_data_dir / f"patch_{burst_id}.parquet"
+        patch_path = self.patch_by_burst_data_dir / f"patch_{burst_id}_{self.patch_size}.parquet"
         df_patch_burst = pd.read_parquet(patch_path)
         patch_data = df_patch_burst.iloc[patch_idx].to_dict()
 
