@@ -57,6 +57,9 @@ __pycache__/
 *.jpg
 *.wld
 *.geojson
+*.lyr
+*.qmd
+*.sld
 
 # Pngs
 marshak/**/*.png
@@ -81,6 +84,9 @@ marshak/**/*.png
 **/opera_rtc_data/
 **/opera_rtc_data_*/
 **/opera_rtc_img_data/
+
+# Data out for ad-hoc data
+marshak/10_use_opera_optical_data_to_generate_val_data/out/
 
 # Data files to include
 !marshak/3_dist_sites/slcs_for_processing.csv.zip
