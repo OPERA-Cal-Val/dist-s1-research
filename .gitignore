@@ -80,6 +80,13 @@ marshak/**/*.png
 *.parquet
 *.pqt
 
+
+# ignore xcel files
+*.xlsx
+
+# ignore pdf
+*.pdf
+
 # Ignore data
 **/opera_rtc_data/
 **/opera_rtc_data_*/
