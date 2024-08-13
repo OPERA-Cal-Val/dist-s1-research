@@ -1,9 +1,0 @@
-event:
-  event_name: badwater_basin_2024
-  bounds: [-116.86, 35.8, -116, 36.5]
-  event_date: '2024-03-02'
-  pre_event_window_days: 60
-  post_event_window_days: 30
-  links:
-      - https://earthobservatory.nasa.gov/images/152448/badwater-basin-refills
-      - https://earthsky.org/earth/death-valley-driest-spot-north-america-new-lake/

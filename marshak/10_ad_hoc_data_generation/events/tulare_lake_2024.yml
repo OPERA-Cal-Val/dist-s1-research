@@ -1,8 +1,0 @@
-event:
-  event_name: tulare_lake
-  bounds: [-120.3317, 35.6794, -119.3317, 36.6794]
-  event_date: 
-  pre_event_window_days: 
-  post_event_window_days: 
-  links:
-      - ''
