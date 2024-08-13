@@ -87,6 +87,9 @@ marshak/**/*.png
 # ignore pdf
 *.pdf
 
+## ignore gdb databases
+**/*.gdb
+
 # Ignore data
 **/opera_rtc_data/
 **/opera_rtc_data_*/
