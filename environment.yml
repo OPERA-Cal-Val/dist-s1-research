@@ -25,7 +25,7 @@ dependencies:
   - rasterio
   - asf_search
   - earthaccess
-  - tile_mate>=0.0.9
+  - tile_mate>=0.0.11
   - dem_stitcher
   - leafmap
   - dill
