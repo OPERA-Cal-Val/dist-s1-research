@@ -13,7 +13,6 @@ from tqdm import tqdm
               help='Provide names of events')
 @click.command()
 def main(event_name: list):
-    print(event_name)
 
     event_names = list(event_name)
 
@@ -25,10 +24,12 @@ def main(event_name: list):
     ipynb_out_dir = Path("out_notebooks")
     ipynb_out_dir.mkdir(exist_ok=True, parents=True)
 
-    for event_name in event_names:
+    for event_name in enumerate(event_names, desc='events'):
+        print(event_name)
         out_site_nb_dir = ipynb_out_dir / event_name
         out_site_nb_dir.mkdir(exist_ok=True, parents=True)
         for in_nb in in_nbs:
+            print(in_nb)
             pm.execute_notebook(
                 in_nb,
                 output_path=out_site_nb_dir / in_nb,
