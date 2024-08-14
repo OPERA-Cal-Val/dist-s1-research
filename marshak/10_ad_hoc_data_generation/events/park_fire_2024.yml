@@ -1,5 +1,5 @@
 event:
-  event_name: park_ca_fire_2024
+  event_name: park_fire_2024
   bounds: [-122.063588, 39.770975, -121.49483901, 40.394684]
   event_date: "2024-07-24"
   pre_event_window_days: 100
