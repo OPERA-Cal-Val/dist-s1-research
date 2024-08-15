@@ -79,8 +79,8 @@ blank_slide_layout_a = prs.slide_layouts[6]
 Nsubset = len(df_val_bursts_subset)
 
 #for index, df_row in df_val_bursts_subset.iterrows():
-#for index in range(Nsubset):
-for index in range(0,1):
+for index in range(Nsubset):
+#for index in range(0,1):
 #  index,df_row = next(df_val_bursts_subset.iterrows())
   # Need burst id using uppercase and dashes
   burst_id = df_val_bursts_subset.loc[index,'jpl_burst_id']
@@ -152,11 +152,15 @@ for index in range(0,1):
     print(f"Error in site id: {site_id}, burst_id: {burst_id}")
 
   try:
-    y_obs = alg_fcns.window_mahalanobis_1d_workflow1(df_rtc_ts_wind['vh_l'])
-    dist_objs = alg_fcns.window_mahalanobis_1d_running(vh_arrs,n_pre_img)
-    dist_vals = [d_obj.dist[1, 1] if d_obj is not None else np.nan for d_obj in dist_objs]
-    dist_dts = [df_rtc_ts_wind['datetime'][k] for (k, d_obj) in enumerate(dist_objs) if d_obj is not None]
-    dist_plot = [dist_obj.dist[1, 1] for dist_obj in dist_objs if dist_obj is not None]
+    #y_obs = alg_fcns.window_mahalanobis_1d_workflow1(df_rtc_ts_wind['vh_l'])
+    vh_arrs = [np.array(w1).reshape((3,3)) for w1 in df_rtc_ts_wind['vh_l']]
+    vv_arrs = [np.array(w1).reshape((3,3)) for w1 in df_rtc_ts_wind['vv_l']]
+    vh_ts_obs,vh_y_obs,vh_dist1ds = alg_fcns.window_mahalanobis_1d_workflow2(vh_arrs,acq_dt_l,threshold,n_pre_img,n_post_imgs_to_confirm,lookback_length_days)
+    vv_ts_obs,vv_y_obs,vv_dist1ds = alg_fcns.window_mahalanobis_1d_workflow2(vv_arrs,acq_dt_l,threshold,n_pre_img,n_post_imgs_to_confirm,lookback_length_days)
+    #dist_objs = alg_fcns.window_mahalanobis_1d_running(vh_arrs,n_pre_img)
+    #dist_vals = [d_obj.dist[1, 1] if d_obj is not None else np.nan for d_obj in dist_objs]
+    #dist_dts = [df_rtc_ts_wind['datetime'][k] for (k, d_obj) in enumerate(dist_objs) if d_obj is not None]
+    #dist_plot = [dist_obj.dist[1, 1] for dist_obj in dist_objs if dist_obj is not None]
 
     plt.rcParams['xtick.labelsize'] = 16
 
@@ -170,11 +174,11 @@ for index in range(0,1):
     ax1a.plot(df_rtc_ts_wind['datetime'], df_rtc_ts_wind['vh_avg'], marker='v', color='tab:brown', label='vh_avg')
     ax1a.set_ylabel('vh_avg', color='tab:brown')
     ax1a.tick_params(axis='y', labelcolor='tab:brown')
-    ax1b = ax1.twinx()
-    ax1b.spines['right'].set_position(('outward', 60))  
-    ax1b.plot(df_rtc_ts_wind['datetime'], df_rtc_ts_wind['vv/vh_avg'], marker='P', color='tab:purple', label='vv/vh_avg')
-    ax1b.set_ylabel('vv/vh_avg', color='tab:purple')
-    ax1b.tick_params(axis='y', labelcolor='tab:purple')
+    #ax1b = ax1.twinx()
+    #ax1b.spines['right'].set_position(('outward', 60))  
+    #ax1b.plot(df_rtc_ts_wind['datetime'], df_rtc_ts_wind['vv/vh_avg'], marker='P', color='tab:purple', label='vv/vh_avg')
+    #ax1b.set_ylabel('vv/vh_avg', color='tab:purple')
+    #ax1b.tick_params(axis='y', labelcolor='tab:purple')
     change_type = df_site.change_type.iloc[0]
     plt.title(f'Change type {change_type}; {burst_id=}; {site_id=}; {odir=}',fontsize=20)
     #ax1.set_xticks(df_rtc_ts_wind['datetime'].tolist())
@@ -189,26 +193,24 @@ for index in range(0,1):
       ax1.axvline(x=change_time, color='r', linestyle='--', label=f'Change time ({change_time})')
     ax1.legend()
 
-    ax2.scatter(dist_dts, dist_plot, marker='s')
-    ax2.plot(dist_dts, dist_plot)
+    ax2.scatter(vv_ts_obs,vv_y_obs,marker='s')
     ax2.set_xlabel('Acquisition Time of Post Image')
-    ax2.set_ylabel('Mahalanobis Distance VH')
-    ax2.set_ylim(-0.05,5.05)
-    ax2.hlines(3, dist_dts[0], dist_dts[-1], ls='--')
+    ax2.set_ylabel('Change/No Change')
+    ax2.set_ylim(-.05, 1.05)
     ax2r = ax2.twinx()
-    ax2r.set_ylabel('Mahalanobis Distance VH')
-    ax2r.set_ylim(-0.05,5.05)
-    ax2r2 = ax2.twinx()
-    ax2r2.set_ylabel('Mahalanobis Distance VH')
-    ax2r2.set_ylim(-0.05,5.05)
+    ax2r.plot(vv_ts_obs, vv_dist1ds, marker='o', color='tab:blue', label='vh')
+    ax2r.set_ylabel('Mahalanobis vv', color='tab:brown')
+    ax2r.tick_params(axis='y', labelcolor='tab:blue')
+    ax2r.hlines(threshold,vv_ts_obs.iloc[0],vv_ts_obs.iloc[-1], ls='--')
     ax2.grid(True)
 
-    ax3.scatter(df_rtc_ts_wind['datetime'], y_obs)
+    #ax3.scatter(df_rtc_ts_wind['datetime'], y_obs)
+    ax3.scatter(vh_ts_obs,vh_y_obs)
     ax3.tick_params(which='both', width=2)
     ax3.tick_params(which='major', length=7, labelsize=16)
     ax3.tick_params(which='minor', length=4, color='r')
-    ax3.set_xlim(df_rtc_ts_wind['datetime'].iloc[0],
-      df_rtc_ts_wind['datetime'].iloc[-1])
+    #ax3.set_xlim(df_rtc_ts_wind['datetime'].iloc[0],
+    #  df_rtc_ts_wind['datetime'].iloc[-1])
     ax3.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
     ax3.xaxis.set_major_formatter(mdates.ConciseDateFormatter(
       ax3.xaxis.get_major_locator()))
@@ -217,12 +219,10 @@ for index in range(0,1):
     ax3.set_ylim(-.05, 1.05)
     ax3r = ax3.twinx()
     bs = df_rtc_ts_wind['vh_center']#.rolling(3).sum()
-    ax3r.plot(df_rtc_ts_wind['datetime'], bs, marker='v', color='tab:brown', label='vh')
-    ax3r.set_ylabel('vh', color='tab:brown')
+    ax3r.plot(vh_ts_obs, vh_dist1ds, marker='v', color='tab:brown', label='vh')
+    ax3r.set_ylabel('Mahalanobis vh', color='tab:brown')
     ax3r.tick_params(axis='y', labelcolor='tab:brown')
-    ax3r2 = ax3.twinx()
-    ax3r2.set_ylabel('vh', color='tab:brown')
-    ax3r2.tick_params(axis='y', labelcolor='tab:brown')
+    ax3r.hlines(threshold,vh_ts_obs.iloc[0],vh_ts_obs.iloc[-1], ls='--')
     ax3.grid(True)
     
     fig.tight_layout()
@@ -252,4 +252,4 @@ for index in range(0,1):
     print(exc_value)
     traceback.print_tb(tb)
 
-prs.save('rtc1.pptx')
+prs.save('alg_cmp_1chan.pptx')
