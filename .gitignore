@@ -131,3 +131,4 @@ marshak/10_use_opera_optical_data_to_generate_val_data/out/
 marshak/10_ad_hoc_data_generation/out_notebooks
 
 !marshak/12_hls_tiles/mgrs.parquet
+!marshak/10_ad_hoc_data_generation/mgrs.parquet
