@@ -7,7 +7,7 @@ event:
   rtc_track_numbers: [150, 114]
   mgrs_tiles: ['45QYE', '45QYF', '45QZE', '45QZF']
   dist_hls_confirmed_change_min_days: 30
-  source_id: "UNOSAT via humanitarian data exchange"
+  source_id: "UNOSAT via https://data.humdata.org"
   links:
     - "https://data.humdata.org/dataset/satellite-detected-water-extents-between-4-11-july-2024-in-bangladesh"
     - "https://reliefweb.int/disaster/fl-2024-000088-bgd"
