@@ -8,5 +8,6 @@ event:
   rtc_track_numbers: [64]
   mgrs_tiles: ['10TGQ', '11TLK']
   dist_hls_confirmed_change_min_days: 15
+  source_id: 'WFIGS Monkey Creek Fire 2024'
   links:
     - "https://data.usatoday.com/fires/monkey-creek/4c740d60-3ea2-40ae-9400-397a37d93a28/"

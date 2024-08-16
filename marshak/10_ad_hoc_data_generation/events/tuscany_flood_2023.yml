@@ -1,13 +1,13 @@
 event:
-  event_name: bangladesh_coastal_flood_2024
-  bounds: [88.96546265, 21.65505773, 91.33990759, 24.17825791]
-  event_date: "2024-07-08"
+  event_name: tuscany_flood_2023
+  bounds: [10.97631339, 43.81441325, 11.15319728, 43.98650075]
+  event_date: "2023-11-02"
   pre_event_window_days: 100
   post_event_window_days: 60
-  rtc_track_numbers: [150, 114]
-  mgrs_tiles: ['45QYE', '45QYF', '45QZE', '45QZF']
+  rtc_track_numbers: [15, 168]
+  mgrs_tiles: ['32TPP']
   dist_hls_confirmed_change_min_days: 30
-  source_id: "UNOSAT via https://data.humdata.org"
+  source_id: "Copernicus EMSN185"
   links:
-    - "https://data.humdata.org/dataset/satellite-detected-water-extents-between-4-11-july-2024-in-bangladesh"
-    - "https://reliefweb.int/disaster/fl-2024-000088-bgd"
+    - "https://emergency.copernicus.eu/mapping/list-of-components/EMSN185"
+    - "https://earthobservatory.nasa.gov/images/152051/flooding-in-tuscany"

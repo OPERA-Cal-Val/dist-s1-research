@@ -133,3 +133,7 @@ marshak/10_ad_hoc_data_generation/out_notebooks
 
 !marshak/12_hls_tiles/mgrs.parquet
 !marshak/10_ad_hoc_data_generation/mgrs.parquet
+
+!marshak/10_ad_hoc_data_generation/events/bangladesh_coastal_flood_2024.yml
+!marshak/10_ad_hoc_data_generation/external_validation_data_db/bangladesh_coastal_flood_2024.parquet
+!marshak/10_ad_hoc_data_generation/external_validation_data_db/tuscany_flood_2023.geojson

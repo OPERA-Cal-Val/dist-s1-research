@@ -7,5 +7,6 @@ event:
   rtc_track_numbers: [137, 115]
   mgrs_tiles: ['10TEK', '10TFK']
   dist_hls_confirmed_change_min_days: 15
+  source_id: 'WFIGS Park Fire 2024'
   links:
     - "https://en.wikipedia.org/wiki/Park_Fire"
