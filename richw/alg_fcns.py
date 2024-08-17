@@ -5,6 +5,11 @@ from distmetrics import compute_mahalonobis_dist_1d
 from distmetrics import compute_mahalonobis_dist_2d
 from tqdm import tqdm
 import pandas as pd
+from datetime import datetime, timedelta
+import rasterio
+from rasterio.crs import CRS
+from rasterio.windows import Window
+import data_fcns
 
 # Functions to support disturbance algorithms
 
@@ -74,6 +79,16 @@ def lookup_pre_idx(post_idx: int,
     else:
         raise ValueError('if lookback_length_days is nonzero, must be greater than 60')
     return pre_idxs
+
+def lookup_pre_idx_daterange(post_dt: pd.Timestamp,
+                   acq_dt_l: list[pd.Timestamp],
+                   td_halfwindow: timedelta,
+                   td_lookback: timedelta):
+  dt_ref1 = post_dt - td_lookback - td_halfwindow
+  dt_ref2 = post_dt - td_lookback + td_halfwindow
+  pre_idxs = data_fcns.indices(acq_dt_l,
+    lambda x: (x>=dt_ref1 and x <= dt_ref2))
+  return pre_idxs
 
 def window_mahalanobis_1d_workflow2(arr_data_l: list[list], 
                                    acq_dt_l: list[pd.Timestamp],
@@ -157,4 +172,12 @@ def window_mahalanobis_2d_workflow2(arr1_data_l: list[list],
         change_pts = change_pts_init
     valid_dts = pd.Series([acq_dt_l[k] for k in valid_post_idxs])
     return valid_dts, np.array(change_pts), dist1ds
+
+# Load one RTC data array from a file
+def get_rtc_fromfile(filepath: str) -> list[np.ndarray]:
+  with rasterio.open(filepath) as rtc_dataset:
+    window = Window(915,915,915,915)
+    band1 = rtc_dataset.read(1,window=window)
+    #band1 = rtc_dataset.read(1)
+    return band1
 
