@@ -12,8 +12,22 @@ from tqdm import tqdm
     multiple=True,
     help="Provide names of events",
 )
+@click.option(
+    "--start_step",
+    required=False,
+    type=int,
+    default=1,
+    help="step to start event on - do not use with more than one event - see notebooks 1 - 4",
+)
+@click.option(
+    "--stop_step",
+    required=False,
+    type=int,
+    default=4,
+    help="step to start event on - do not use with more than one event - see notebooks 1 to 4",
+)
 @click.command()
-def main(event_name: list):
+def main(event_name: list | tuple, start_step: int, stop_step: int):
     event_names = list(event_name)
 
     in_nbs = [
@@ -22,6 +36,11 @@ def main(event_name: list):
         "3__Validation_Data.ipynb",
         "4__Water_Mask.ipynb",
     ]
+
+    for step in [start_step, stop_step]:
+        assert step in list(range(1, 5)), 'start and stop must be 1, 2, 3, 4'
+
+    in_nbs = in_nbs[start_step - 1: stop_step]
 
     ipynb_out_dir = Path("out_notebooks")
     ipynb_out_dir.mkdir(exist_ok=True, parents=True)
