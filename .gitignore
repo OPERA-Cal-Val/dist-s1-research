@@ -140,3 +140,4 @@ marshak/10_ad_hoc_data_generation/out_notebooks
 !marshak/10_ad_hoc_data_generation/external_validation_data_db/benghazi_flood_2023.geojson
 !marshak/10_ad_hoc_data_generation/external_validation_data_db/derna_flood_2023.geojson
 !marshak/10_ad_hoc_data_generation/external_validation_data_db/demak_flood_2024.parquet
+!marshak/10_ad_hoc_data_generation/external_validation_data_db/yajiang_fire_2024.geojson
