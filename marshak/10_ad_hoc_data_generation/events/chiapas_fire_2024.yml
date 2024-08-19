@@ -1,0 +1,14 @@
+event:
+  event_name: chiapas_fire_2024
+  bounds: [-94.61821887, 16.40055876, -93.99189954, 16.86321617]
+  event_date: "2024-03-28"
+  pre_event_window_days: 100
+  post_event_window_days: 60
+  rtc_track_numbers: [172, 107]
+  mgrs_tiles: ['15QUU']
+  dist_hls_confirmed_change_min_days: 30
+  source_id: "Copernicus EMSR717"
+  links:
+    - "data: https://rapidmapping.emergency.copernicus.eu/EMSR717"
+    - "https://earthobservatory.nasa.gov/images/152628/fire-in-southern-mexico"
+    - "etin-171-copernicus-emergency-management-service-monitors-wildfires-mexico"
