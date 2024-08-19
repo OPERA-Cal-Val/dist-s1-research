@@ -176,8 +176,8 @@ def window_mahalanobis_2d_workflow2(arr1_data_l: list[list],
 # Load one RTC data array from a file
 def get_rtc_fromfile(filepath: str) -> list[np.ndarray]:
   with rasterio.open(filepath) as rtc_dataset:
-    window = Window(915,915,915,915)
-    band1 = rtc_dataset.read(1,window=window)
-    #band1 = rtc_dataset.read(1)
+    #window = Window(915,915,915,915)
+    #band1 = rtc_dataset.read(1,window=window)
+    band1 = rtc_dataset.read(1)
     return band1
 

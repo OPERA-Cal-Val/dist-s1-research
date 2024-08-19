@@ -1,9 +1,13 @@
 #! /usr/bin/env python
 
+from pptx import Presentation
+from pptx.util import Inches
 import matplotlib.pyplot as plt
 import pandas as pd
 import data_fcns
 import warnings
+from datetime import datetime, timedelta
+from dateutil.parser import parse
 
 def plot_rtc(df_rtc_ts_wind,figfile,df_site):
   POL_RATIO_PLOT = False
@@ -56,4 +60,31 @@ def plot_rtc(df_rtc_ts_wind,figfile,df_site):
   ax1.legend()
   fig.savefig(figfile,dpi=300,bbox_inches="tight")
   plt.close(fig)
+
+def prs_implot2(chanstr1,arr1,vmin1,vmax1,chanstr2,arr2,vmin2,vmax2,
+  dt,tracknum,event_date,prs,tmpname):
+  fig,ax = plt.subplots()
+  im = ax.imshow(arr1,cmap='gray',vmax=vmax1,vmin=vmin1)
+  plt.title(f'{chanstr1}, trk: {tracknum}, {event_date}, im date: {datetime.strftime(dt,'%y-%m-%d')}')
+  fig.tight_layout()
+  fig.savefig(tmpname,dpi=300,bbox_inches="tight")
+  plt.close(fig)
+  slide = prs.slides.add_slide(prs.slide_layouts[6])
+  left = Inches(0.5)
+  top = Inches(1)
+  height = Inches(4)
+  width = Inches(4)
+  pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
+
+  fig,ax = plt.subplots()
+  im = ax.imshow(arr2,cmap='gray',vmax=vmax2,vmin=vmin2)
+  plt.title(f'{chanstr2}, trk: {tracknum}, {event_date}, im date: {datetime.strftime(dt,'%y-%m-%d')}')
+  fig.tight_layout()
+  fig.savefig(tmpname,dpi=300,bbox_inches="tight")
+  plt.close(fig)
+  left = Inches(5)
+  top = Inches(1)
+  height = Inches(4)
+  width = Inches(4)
+  pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
 
