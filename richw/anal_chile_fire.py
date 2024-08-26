@@ -35,17 +35,22 @@ import data_fcns
 import plot_fcns
 import test_setup
 import alg_fcns
-from alg_fcns import get_rtc_fromfile
+from alg_fcns import get_raster_fromfile
+from alg_fcns import accuracy
+from alg_fcns import anal_1d_alg
 from distmetrics import compute_mahalonobis_dist_1d
 from distmetrics import compute_mahalonobis_dist_2d
 from plot_fcns import prs_implot2
+from plot_fcns import prs_roc4
+from data_fcns import rasterize_shapes_to_array
 
 dir_base = '/home/richw/src/opera'
 dir_research = dir_base + '/dist-s1-research'
 dir_ad_hoc = dir_research + '/marshak/10_ad_hoc_data_generation'
 dir_events = dir_ad_hoc + '/events'
 dir_external_val_data = dir_ad_hoc + '/external_validation_data_db'
-dir_aurora_event_base = '/u/aurora-r0/cmarshak/dist-s1-research/marshak/10_ad_hoc_data_generation/out'
+#dir_aurora_event_base = '/u/aurora-r0/cmarshak/dist-s1-research/marshak/10_ad_hoc_data_generation/out'
+dir_aurora_event_base = '/u/aurora-r0/cmarshak/dist-s1-events/out'
 
 event_name = 'chile_fire_2024'
 
@@ -57,19 +62,60 @@ print(f'Analyzing Event: {event_name}')
 
 dir_event = dir_aurora_event_base + '/' + event_name
 dir_rtc = dir_event + '/rtc_ts_merged'
+dir_val = dir_event + '/validation_data'
+dir_hls = dir_event + '/change_map_dist_hls'
+dir_water = dir_event + '/water_mask'
 
 filename_event = dir_external_val_data + '/' + event_name + '.geojson'
-filename_event_val = event_name + '.png'
-event = gpd.read_file(filename_event)
+filename_event_db = event_name + '.png'
+df_event = gpd.read_file(filename_event)
 fig,ax = plt.subplots()
-event.plot(ax=ax)
+df_event.plot(ax=ax)
 fig.tight_layout()
-fig.savefig(filename_event_val,dpi=300,bbox_inches="tight")
+fig.savefig(filename_event_db,dpi=300,bbox_inches="tight")
 plt.close(fig)
 
+event_date = pd.to_datetime(event_dict['event_date'])
+
+# Reference files available
+ref_files = os.listdir(dir_val)
+Nref = len(ref_files)
+if Nref > 1:
+  print("Warning: Multiple reference files available, using just first")
+filename_val = dir_val + '/' + ref_files[0]
+print("Loading Validation data")
+with rasterio.open(filename_val) as val:
+  ref_profile = val.profile
+  ref_crs = val.crs
+  ref_data = val.read(1)
+
+df_event_utm = df_event.to_crs(ref_crs)
+
+# ref and ref_data are the same thing!
+ref = rasterize_shapes_to_array(df_event_utm.geometry.tolist(), np.ones(df_event_utm.shape[0]), ref_profile, all_touched=True, dtype='uint8')
+
+filename_ref = 'ref.tif'
+fig,ax = plt.subplots()
+plt.imshow(ref, interpolation='none')
+fig.tight_layout()
+fig.savefig(filename_ref,dpi=300,bbox_inches="tight")
+plt.close(fig)
+
+# DIST-HLS files available
+print("Loading DIST-HLS data")
+dist_hls_files = os.listdir(dir_hls)
+Ndisthls = len(dist_hls_files)
+dist_hls_data = [get_raster_fromfile(os.path.join(dir_hls,fname))
+      for fname in dist_hls_files]
+
+# Water msak files available
+print("Loading water mask")
+water_files = os.listdir(dir_water)
+water_masks = [get_raster_fromfile(os.path.join(dir_water,fname))
+      for fname in water_files]
+land_mask = np.logical_not(water_masks[0])
+
 # Alg parameters
-td_lookback = timedelta(days=18)
-td_halfwindow = timedelta(days=18)
 
 # Tracks available for this event
 tracknums = [d[5:] for d in os.listdir(dir_rtc)]
@@ -79,15 +125,30 @@ prs_dist1ds = Presentation()
 prs_data = Presentation()
 #blank_slide_layout_data = prs_data.slide_layouts[6]
 prs_dist2ds = Presentation()
+prs_roc = Presentation()
 
-do_data_plot = False
-do_dist1ds_plot = False
-do_dist2ds_plot = False
-redo_mahalanobis = True
+algctrl = dict(
+  td_lookback = timedelta(days=19),
+  td_halfwindow = timedelta(days=18),
+  Nconfirm = 1,
+  do_data_plot = False,
+  do_dist1ds_plot = False,
+  do_dist2ds_plot = False,
+  do_roc_plot = True,
+  do_hist_mahalanobis_plot = True,
+  plot_dir = 'plots')
 
 file_mahalanobis_base = 'mahalanobis'
 
 try:
+  td_lookback = algctrl['td_lookback']
+  td_halfwindow = algctrl['td_halfwindow']
+  Nconfirm = algctrl['Nconfirm']
+  do_data_plot = algctrl['do_data_plot']
+  do_dist1ds_plot = algctrl['do_dist1ds_plot']
+  do_dist2ds_plot = algctrl['do_dist2ds_plot']
+  do_roc_plot = algctrl['do_roc_plot']
+  plot_dir = algctrl['plot_dir']
   #for tracknum in tracknums:
   for tracknum in [tracknums[0]]:
     print(f"Track: {tracknum}")
@@ -129,111 +190,44 @@ try:
     pre_idxs = [alg_fcns.lookup_pre_idx_daterange(dt,datetimes,
       td_halfwindow,td_lookback) for i,dt in enumerate(datetimes)]
 
+    # Set post indices to confirm
+
+    post_idxs = [range(i,min(i+Nconfirm,Ndatetimes)) for i in range(Ndatetimes)]
+
     # Load all RTC data for available datetimes
 
     print("Loading RTC data")
-    vv_data = [get_rtc_fromfile(os.path.join(dir_track,fname))
+    vv_data = [get_raster_fromfile(os.path.join(dir_track,fname))
       for fname in vv_filelist]
-    vh_data = [get_rtc_fromfile(os.path.join(dir_track,fname))
+    vh_data = [get_raster_fromfile(os.path.join(dir_track,fname))
       for fname in vh_filelist]
 
     # Compute ratio
     vv_vh_ratio = [vv/vh for vv,vh in zip(vv_data,vh_data)]
 
-    if (not redo_mahalanobis) or Path(file_mahalanobis_track).is_file():
-      print("Loading already computed Mahalanobis distances")
-      with open(file_mahalanobis_track) as fpkl:
-        (vv_dist_objs,vh_dist_objs,dist1d_ratio_objs,
-         dist2d_objs) = pickle.load(fpkl)
-    else:
-      # Compute Mahalonobis distances from RTC data using pre_idxs for
-      # each datetime
-
-      print("Computing Mahalonobis distances")
-
-      # Collect pre arrays as views to avoid unnecessary copying
-      pre_vv = [[vv_data[i].view() for i in prei] for prei in pre_idxs]
-      pre_vh = [[vh_data[i].view() for i in prei] for prei in pre_idxs]
-      pre_ratio = [[vv_vh_ratio[i].view() for i in prei] for prei in pre_idxs]
-
-      vv_dist_objs = [compute_mahalonobis_dist_1d(prevv, vv)
-        for prevv,vv in zip(pre_vv,vv_data)]
-      vh_dist_objs = [compute_mahalonobis_dist_1d(prevh, vh)
-        for prevh,vh in zip(pre_vh,vh_data)]
-      dist1d_ratio_objs = [compute_mahalonobis_dist_1d(preratio,ratio)
-        for preratio,ratio in zip(pre_ratio,vv_vh_ratio)]
-      dist2d_objs = [compute_mahalonobis_dist_2d(prevv,prevh,vv,vh)
-        for prevv,prevh,vv,vh in zip(pre_vv,pre_vh,vv_data,vh_data)]
-
-      print("Saving Mahalanobis distances")
-      with open(file_mahalanobis_track,'wb') as fpkl:
-        pickle.dump([vv_dist_objs,vh_dist_objs,dist1d_ratio_objs,
-          dist2d_objs],fpkl)
-
-    # Extract distances and max/mins
-    print("Extracting distances and max/mins")
-
-    vv_data_max = [vv.max() for vv in vv_data]
-    max_vv_data = max(vv_data_max)
-    vv_data_min = [vv.min() for vv in vv_data]
-    min_vv_data = min(vv_data_min)
-
-    vh_data_max = [vh.max() for vh in vh_data]
-    max_vh_data = max(vh_data_max)
-    vh_data_min = [vh.min() for vh in vh_data]
-    min_vh_data = min(vh_data_min)
-
-    vv_dist1ds = [vv_dist_objs[i].dist for i in range(Ndatetimes)]
-    vv_dist1ds_max = [vv_dist1ds[i].max() for i in range(Ndatetimes)]
-    max_vv_dist1ds = max(vv_dist1ds_max)
-    vv_dist1ds_min = [vv_dist1ds[i].min() for i in range(Ndatetimes)]
-    min_vv_dist1ds = min(vv_dist1ds_min)
-    
-    vh_dist1ds = [vh_dist_objs[i].dist for i in range(Ndatetimes)]
-    vh_dist1ds_max = [vh_dist1ds[i].max() for i in range(Ndatetimes)]
-    max_vh_dist1ds = max(vh_dist1ds_max)
-    vh_dist1ds_min = [vh_dist1ds[i].min() for i in range(Ndatetimes)]
-    min_vh_dist1ds = min(vh_dist1ds_min)
-    
-    ratio_dist1ds = [dobj.dist for dobj in dist1d_ratio_objs]
-    ratio_dist1ds_max = [np.nanmax(d1) for d1 in ratio_dist1ds]
-    max_ratio_dist1ds = np.nanmax(ratio_dist1ds_max)
-    ratio_dist1ds_min = [np.nanmin(d1) for d1 in ratio_dist1ds]
-    min_ratio_dist1ds = np.nanmin(ratio_dist1ds_min)
-
-    dist2ds = [dobj.dist for dobj in dist2d_objs]
-    dist2ds_max = [np.nanmax(d1) for d1 in dist2ds]
-    max_dist2ds = np.nanmax(dist2ds_max)
-    dist2ds_min = [np.nanmin(d1) for d1 in dist2ds]
-    min_dist2ds = np.nanmin(dist2ds_min)
-
-    print("Doing powerpoint figures")
-    #figfile = 't' + tracknum + '_vv_dist1ds.png'
-    figfile = 'tmp.png'
-    for i in range(Ndatetimes):
-      print(f"{i+1}/{Ndatetimes}",end='\r')
-      if i > 0:
-        continue
-      if do_dist1ds_plot:
-        prs_implot2('VV',vv_dist1ds[i],min_vv_dist1ds,max_vv_dist1ds,
-          'VH',vh_dist1ds[i],min_vh_dist1ds,max_vh_dist1ds,
-          datetimes[i],tracknum,event_dict['event_date'],
-          prs_dist1ds,figfile)
-
-      if do_dist2ds_plot:
-        prs_implot2('VV/VH',ratio_dist1ds[i],min_ratio_dist1ds,
-          max_ratio_dist1ds,
-          '2D VV,VH',dist2ds[i],min_dist2ds,max_dist2ds,
-          datetimes[i],tracknum,event_dict['event_date'],
-          prs_dist2ds,figfile)
-
-      if do_data_plot:
+    if do_data_plot:
+      print("Data plot powerpoint")
+      figfile = 'tmp.png'
+      for i in range(Ndatetimes):
+        print(f"{i+1}/{Ndatetimes}",end='\r')
+        #if i > 0:
+        #  continue
         prs_implot2('VV',vv_data[i],0.0,0.5,
           'VH',vh_data[i],0.0,0.05,
           datetimes[i],tracknum,event_dict['event_date'],
           prs_data,figfile)
+      print("\ndone")
 
-    print("\ndone")
+    thresholds = [x/10.0 for x in range(0,100)]
+    r0 = np.zeros_like(ref)
+    refs = [ref.view() if dt >= event_date else r0.view() for dt in datetimes]
+    dist1ds,change,tp,fp,tn,fn = anal_1d_alg(algctrl,datetimes,tracknum,
+      event_date,
+      'VV',vv_data,pre_idxs,post_idxs,
+      thresholds,refs,land_mask)
+
+    #dist2d_objs = [compute_mahalonobis_dist_2d(prevv,prevh,postvv,postvh)
+    #  for prevv,prevh,postvv,postvh in zip(pre_vv,pre_vh,post_vv,post_vh)]
 
 except Exception as e:
     exc_type,exc_value,exc_traceback = sys.exc_info()
@@ -254,3 +248,5 @@ if do_dist2ds_plot:
 if do_data_plot:
   prs_data.save('chile_fire_data.pptx')  
 
+if do_roc_plot:
+  prs_roc.save('chile_fire_roc.pptx')
