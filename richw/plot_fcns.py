@@ -88,14 +88,12 @@ def prs_implot2(chanstr1,arr1,vmin1,vmax1,chanstr2,arr2,vmin2,vmax2,
   width = Inches(4)
   pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
 
-def implot1(chanstr1,arr1,vmin1,vmax1,
+def implot1(fig,ax,chanstr1,arr1,vmin1,vmax1,
   dt,tracknum,event_date,plotname):
-  fig,ax = plt.subplots()
   im = ax.imshow(arr1,cmap='gray',vmax=vmax1,vmin=vmin1)
   plt.title(f'{chanstr1}, trk: {tracknum}, {event_date}, im date: {datetime.strftime(dt,'%y-%m-%d')}')
   fig.tight_layout()
   fig.savefig(plotname,dpi=300,bbox_inches="tight")
-  plt.close(fig)
 
 def prs_roc4(chanstr1,tp1,fp1,chanstr2,tp2,fp2,chanstr3,tp3,fp3,
   chanstr4,tp4,fp4,dt,tracknum,event_date,prs,tmpname):
@@ -125,21 +123,59 @@ def prs_roc4(chanstr1,tp1,fp1,chanstr2,tp2,fp2,chanstr3,tp3,fp3,
   width = Inches(4)
   pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
 
-def roc1(chanstr,tp1,fp1,tmpname,dt,tracknum,event_date): 
-  fig,ax = plt.subplots()
-  ax.plot(fp1,tp1,marker='o')
+def roc1(fig,ax,chanstr,tp1,fp1,tmpname,dt,tracknum,event_date): 
+  line1 = ax.plot(fp1,tp1,marker='o')
   ax.set_xlabel('false positive')
   ax.set_ylabel('true positive')
   plt.title(f'{chanstr} trk: {tracknum}, {event_date}, {datetime.strftime(dt,'%y-%m-%d')}')
   fig.savefig(tmpname,dpi=300,bbox_inches="tight")
-  plt.close(fig)
   
-def hist1(chanstr,arr1,arr_name,tmpname,dt,tracknum,event_date): 
-  fig,ax = plt.subplots()
-  ax.hist(arr1)
+def hist1(fig,ax,chanstr,arr1,arr_name,nbins,binrange,
+  tmpname,dt,tracknum,event_date): 
+  ax.hist(arr1,bins=nbins,range=binrange)
   ax.set_xlabel(arr_name)
   ax.set_ylabel('count')
   plt.title(f'{chanstr} trk: {tracknum}, {event_date}, {datetime.strftime(dt,'%y-%m-%d')}')
   fig.savefig(tmpname,dpi=300,bbox_inches="tight")
-  plt.close(fig)
   
+def prs_dathist2(chanstr1,data1,name1,vmin1,vmax1,nbins1,binrange1,
+  chanstr2,data2,name2,vmin2,vmax2,nbins2,binrange2,
+  dt,tracknum,event_date,prs,tmpname):
+  if binrange1 == 0:
+    binrange1 = (data1.min(),data1.max())
+  if binrange2 == 0:
+    binrange2 = (data2.min(),data2.max())
+  slide = prs.slides.add_slide(prs.slide_layouts[6])
+  fig,ax = plt.subplots()
+  implot1(fig,ax,chanstr1,data1,vmin1,vmax1,dt,tracknum,event_date,tmpname)
+  left = Inches(0.5)
+  top = Inches(1)
+  height = Inches(3.5)
+  width = Inches(4)
+  pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
+  implot1(fig,ax,chanstr2,data2,vmin2,vmax2,dt,tracknum,event_date,tmpname)
+  left = Inches(5)
+  top = Inches(1)
+  height = Inches(3.5)
+  width = Inches(4)
+  pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
+  #plt.close(fig)
+
+  #fig,ax = plt.subplots()
+  ax.clear()
+  hist1(fig,ax,chanstr1,data1,name1,nbins1,binrange1,
+    tmpname,dt,tracknum,event_date)
+  left = Inches(0.5)
+  top = Inches(4)
+  height = Inches(3.5)
+  width = Inches(4)
+  pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
+  hist1(fig,ax,chanstr2,data2,name2,nbins2,binrange2,
+    tmpname,dt,tracknum,event_date)
+  left = Inches(5)
+  top = Inches(4)
+  height = Inches(3.5)
+  width = Inches(4)
+  pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
+  plt.close(fig)
+

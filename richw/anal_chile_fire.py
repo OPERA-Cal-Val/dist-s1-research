@@ -15,6 +15,7 @@ from rasterio.windows import Window
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib
 from shapely.geometry import Point
 import pandas as pd
 import geopandas as gpd
@@ -38,11 +39,22 @@ import alg_fcns
 from alg_fcns import get_raster_fromfile
 from alg_fcns import accuracy
 from alg_fcns import anal_1d_alg
+from alg_fcns import anal_2d_alg
+from alg_fcns import anal_1d_alg_aoi
 from distmetrics import compute_mahalonobis_dist_1d
 from distmetrics import compute_mahalonobis_dist_2d
 from plot_fcns import prs_implot2
 from plot_fcns import prs_roc4
 from data_fcns import rasterize_shapes_to_array
+
+# Speed up non-interactive plots
+# Agg backend is optimized for non-interactive plots
+matplotlib.use('Agg')
+# Enable line simplification and increase the threshold
+matplotlib.rcParams['path.simplify'] = True
+matplotlib.rcParams['path.simplify_threshold'] = 1.0
+# Split long lines to allow parallelization
+matplotlib.rcParams['agg.path.chunksize'] = 10000
 
 dir_base = '/home/richw/src/opera'
 dir_research = dir_base + '/dist-s1-research'
@@ -80,14 +92,22 @@ event_date = pd.to_datetime(event_dict['event_date'])
 # Reference files available
 ref_files = os.listdir(dir_val)
 Nref = len(ref_files)
-if Nref > 1:
-  print("Warning: Multiple reference files available, using just first")
-filename_val = dir_val + '/' + ref_files[0]
-print("Loading Validation data")
-with rasterio.open(filename_val) as val:
-  ref_profile = val.profile
-  ref_crs = val.crs
-  ref_data = val.read(1)
+if Nref != 2:
+  print("Warning: Not 2 files in validation directory")
+for ival in range(Nref):
+  filename_val = dir_val + '/' + ref_files[ival]
+  if ref_files[ival][0:6] == 'extent':
+    print("Loading AOI data")
+    with rasterio.open(filename_val) as aoi:
+      aoi_mask = aoi.read(1)
+      aoi_mask = aoi_mask.astype(bool)
+  else: 
+    print("Loading Validation data")
+    with rasterio.open(filename_val) as val:
+      ref_profile = val.profile
+      ref_crs = val.crs
+      ref_mask = val.read(1)
+      ref_mask = ref_mask.astype(bool)
 
 df_event_utm = df_event.to_crs(ref_crs)
 
@@ -130,12 +150,12 @@ prs_roc = Presentation()
 algctrl = dict(
   td_lookback = timedelta(days=19),
   td_halfwindow = timedelta(days=18),
-  Nconfirm = 1,
+  Nconfirm = 3,
   do_data_plot = False,
   do_dist1ds_plot = False,
   do_dist2ds_plot = False,
   do_roc_plot = True,
-  do_hist_mahalanobis_plot = True,
+  do_hist_mahalanobis_plot = False,
   plot_dir = 'plots')
 
 file_mahalanobis_base = 'mahalanobis'
@@ -218,16 +238,36 @@ try:
           prs_data,figfile)
       print("\ndone")
 
+    # Restrict to AOI for later accuracy calculations
+    ref_aoi = ref[aoi_mask]
+
     thresholds = [x/10.0 for x in range(0,100)]
     r0 = np.zeros_like(ref)
     refs = [ref.view() if dt >= event_date else r0.view() for dt in datetimes]
-    dist1ds,change,tp,fp,tn,fn = anal_1d_alg(algctrl,datetimes,tracknum,
+
+    #dist1ds,change,tp,fp,tn,fn = anal_1d_alg(algctrl,datetimes,tracknum,
+    #  event_date,
+    #  'VV',vv_data,pre_idxs,post_idxs,
+    #  thresholds,refs,land_mask)
+    dist1ds,change,tp,fp,tn,fn = anal_1d_alg_aoi(algctrl,datetimes,tracknum,
       event_date,
       'VV',vv_data,pre_idxs,post_idxs,
-      thresholds,refs,land_mask)
+      thresholds,ref_aoi,aoi_mask)
 
-    #dist2d_objs = [compute_mahalonobis_dist_2d(prevv,prevh,postvv,postvh)
-    #  for prevv,prevh,postvv,postvh in zip(pre_vv,pre_vh,post_vv,post_vh)]
+    #dist1ds,change,tp,fp,tn,fn = anal_1d_alg(algctrl,datetimes,tracknum,
+    #  event_date,
+    #  'VH',vh_data,pre_idxs,post_idxs,
+    #  thresholds,refs,land_mask)
+
+    #dist1ds,change,tp,fp,tn,fn = anal_1d_alg(algctrl,datetimes,tracknum,
+    #  event_date,
+    #  'VV_VH_ratio',vv_vh_ratio,pre_idxs,post_idxs,
+    #  thresholds,refs,land_mask)
+
+    #dist1ds,change,tp,fp,tn,fn = anal_2d_alg(algctrl,datetimes,tracknum,
+    #  event_date,
+    #  '2D_VV_VH',vv_data,vh_data,pre_idxs,post_idxs,
+    #  thresholds,refs,land_mask)
 
 except Exception as e:
     exc_type,exc_value,exc_traceback = sys.exc_info()
