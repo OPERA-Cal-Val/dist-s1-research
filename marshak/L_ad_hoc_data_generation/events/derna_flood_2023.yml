@@ -1,0 +1,13 @@
+event:
+  event_name: derna_flood_2023 
+  bounds: [22.52302437, 32.65748484, 22.68674853, 32.80244308]
+  event_date: "2023-11-09"
+  pre_event_window_days: 100
+  post_event_window_days: 60
+  rtc_track_numbers: [175, 7]
+  mgrs_tiles: ['34SFB']
+  dist_hls_confirmed_change_min_days: 30
+  source_id: "Copernicus EMSR696"
+  links:
+    - "https://rapidmapping.emergency.copernicus.eu/EMSR696/download"
+    - "https://apnews.com/article/libya-derna-floods-5d29f54b47bcc6daa6802e5f9c8f2d10"
