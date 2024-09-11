@@ -40,7 +40,9 @@ from alg_fcns import get_raster_fromfile
 from alg_fcns import accuracy
 from alg_fcns import anal_1d_alg
 from alg_fcns import anal_2d_alg
-from alg_fcns import anal_1d_alg_aoi
+from alg_fcns import anal_1d_logratio_aoi
+from alg_fcns import anal_1d_mahalanobis_aoi
+from alg_fcns import anal_2d_mahalanobis_aoi
 from distmetrics import compute_mahalonobis_dist_1d
 from distmetrics import compute_mahalonobis_dist_2d
 from plot_fcns import prs_implot2
@@ -59,8 +61,11 @@ matplotlib.rcParams['agg.path.chunksize'] = 10000
 dir_base = '/home/richw/src/opera'
 dir_research = dir_base + '/dist-s1-research'
 dir_ad_hoc = dir_research + '/marshak/10_ad_hoc_data_generation'
-dir_events = dir_ad_hoc + '/events'
-dir_external_val_data = dir_ad_hoc + '/external_validation_data_db'
+dir_events_base = dir_base + '/dist-s1-events'
+dir_events = dir_events_base + '/events'
+dir_external_val_data = dir_events_base + '/external_validation_data_db'
+#dir_events = dir_ad_hoc + '/events'
+#dir_external_val_data = dir_ad_hoc + '/external_validation_data_db'
 #dir_aurora_event_base = '/u/aurora-r0/cmarshak/dist-s1-research/marshak/10_ad_hoc_data_generation/out'
 dir_aurora_event_base = '/u/aurora-r0/cmarshak/dist-s1-events/out'
 
@@ -96,8 +101,9 @@ if Nref != 2:
   print("Warning: Not 2 files in validation directory")
 for ival in range(Nref):
   filename_val = dir_val + '/' + ref_files[ival]
-  if ref_files[ival][0:6] == 'extent':
-    print("Loading AOI data")
+  #if ref_files[ival][0:6] == 'extent':
+  if "extent" in ref_files[ival]:
+    print("Loading AOI (extent) data")
     with rasterio.open(filename_val) as aoi:
       aoi_mask = aoi.read(1)
       aoi_mask = aoi_mask.astype(bool)
@@ -111,14 +117,21 @@ for ival in range(Nref):
 
 df_event_utm = df_event.to_crs(ref_crs)
 
-# ref and ref_data are the same thing!
+# ref and ref_mask are the same thing!
 ref = rasterize_shapes_to_array(df_event_utm.geometry.tolist(), np.ones(df_event_utm.shape[0]), ref_profile, all_touched=True, dtype='uint8')
 
-filename_ref = 'ref.tif'
+filename_ref = 'ref.png'
 fig,ax = plt.subplots()
 plt.imshow(ref, interpolation='none')
 fig.tight_layout()
 fig.savefig(filename_ref,dpi=300,bbox_inches="tight")
+plt.close(fig)
+
+filename_extent = 'extent.png'
+fig,ax = plt.subplots()
+plt.imshow(aoi_mask, interpolation='none')
+fig.tight_layout()
+fig.savefig(filename_extent,dpi=300,bbox_inches="tight")
 plt.close(fig)
 
 # DIST-HLS files available
@@ -148,13 +161,17 @@ prs_dist2ds = Presentation()
 prs_roc = Presentation()
 
 algctrl = dict(
-  td_lookback = timedelta(days=19),
-  td_halfwindow = timedelta(days=18),
-  Nconfirm = 3,
-  do_data_plot = False,
+  td_lookback = timedelta(days=75),
+  td_halfwindow = timedelta(days=50),
+  Nconfirm = 1,
+  do_data_plot = True,
+  do_metric_plot = True,
+  metric_plot_vmin = 0.0,
+  metric_plot_vmax = 5.0,
   do_dist1ds_plot = False,
   do_dist2ds_plot = False,
   do_roc_plot = True,
+  do_prc_plot = True,
   do_hist_mahalanobis_plot = False,
   plot_dir = 'plots')
 
@@ -239,30 +256,39 @@ try:
       print("\ndone")
 
     # Restrict to AOI for later accuracy calculations
-    ref_aoi = ref[aoi_mask]
+    #ref_aoi = ref[aoi_mask]
 
-    thresholds = [x/10.0 for x in range(0,100)]
-    r0 = np.zeros_like(ref)
-    refs = [ref.view() if dt >= event_date else r0.view() for dt in datetimes]
+    #thresholds = [x/5.0 for x in range(0,50)]
+    #r0 = np.zeros_like(ref)
+    #refs = [ref.view() if dt >= event_date else r0.view() for dt in datetimes]
 
     #dist1ds,change,tp,fp,tn,fn = anal_1d_alg(algctrl,datetimes,tracknum,
     #  event_date,
     #  'VV',vv_data,pre_idxs,post_idxs,
     #  thresholds,refs,land_mask)
-    dist1ds,change,tp,fp,tn,fn = anal_1d_alg_aoi(algctrl,datetimes,tracknum,
-      event_date,
-      'VV',vv_data,pre_idxs,post_idxs,
-      thresholds,ref_aoi,aoi_mask)
-
-    #dist1ds,change,tp,fp,tn,fn = anal_1d_alg(algctrl,datetimes,tracknum,
+    #dist1ds,change,tp,fp,tn,fn = anal_1d_alg_aoi2(algctrl,datetimes,tracknum,
     #  event_date,
-    #  'VH',vh_data,pre_idxs,post_idxs,
-    #  thresholds,refs,land_mask)
+    #  'VV',vv_data,pre_idxs,post_idxs,
+    #  thresholds,ref_aoi,aoi_mask)
+    thresholds = anal_1d_logratio_aoi(algctrl,datetimes,tracknum,
+      event_date,'LR-VH',vh_data,pre_idxs,post_idxs,
+      ref,aoi_mask)
 
-    #dist1ds,change,tp,fp,tn,fn = anal_1d_alg(algctrl,datetimes,tracknum,
-    #  event_date,
-    #  'VV_VH_ratio',vv_vh_ratio,pre_idxs,post_idxs,
-    #  thresholds,refs,land_mask)
+    thresholds = anal_1d_logratio_aoi(algctrl,datetimes,tracknum,
+      event_date,'LR-VV',vv_data,pre_idxs,post_idxs,
+      ref,aoi_mask)
+
+    thresholds = anal_1d_mahalanobis_aoi(algctrl,datetimes,tracknum,
+      event_date,'VV',vv_data,pre_idxs,post_idxs,
+      ref,aoi_mask)
+
+    thresholds = anal_1d_mahalanobis_aoi(algctrl,datetimes,tracknum,
+      event_date,'VH',vh_data,pre_idxs,post_idxs,
+      ref,aoi_mask)
+
+    thresholds = anal_2d_mahalanobis_aoi(algctrl,datetimes,tracknum,
+      event_date,'2D_VV_VH',vv_data,vh_data,pre_idxs,post_idxs,
+      ref,aoi_mask)
 
     #dist1ds,change,tp,fp,tn,fn = anal_2d_alg(algctrl,datetimes,tracknum,
     #  event_date,
@@ -274,10 +300,25 @@ except Exception as e:
     tb = exc_traceback
     stack = inspect.trace()
     lcls = locals()
-    slcls = tb.tb_next.tb_frame.f_locals
+    tb1 = tb
+    while True:
+      # Sweep for bottom of traceback list within user code
+      # (where the error occurred)
+      if tb1.tb_next:
+        fname = tb1.tb_next.tb_frame.f_code.co_filename
+        if "opera" in fname:
+          tb1 = tb1.tb_next
+        else:
+          break
+      else:
+        break
+    sl = tb1.tb_frame.f_locals
+    fname = tb1.tb_frame.f_code.co_filename
+    lineno = tb1.tb_frame.f_lineno
     print(f"Error at tracknum: {tracknum}, filename_rtc: {filename_rtc}")
+    print(f"Error at user line: {lineno} in {fname}")
     print(exc_value)
-    traceback.print_tb(tb)
+    #traceback.print_tb(tb)
 
 if do_dist1ds_plot:
   prs_dist1ds.save('chile_fire_dist1ds.pptx')  

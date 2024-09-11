@@ -2,14 +2,18 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from distmetrics import compute_mahalonobis_dist_1d
-from distmetrics import compute_mahalonobis_dist_2d
 from tqdm import tqdm
 import pandas as pd
 from datetime import datetime, timedelta
 import rasterio
 from rasterio.crs import CRS
 from rasterio.windows import Window
+from sklearn.metrics import roc_curve
+from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import precision_recall_fscore_support
+from distmetrics import compute_mahalonobis_dist_1d
+from distmetrics import compute_mahalonobis_dist_2d
+from distmetrics import compute_log_ratio
 import data_fcns
 from plot_fcns import prs_implot2,prs_roc4
 from plot_fcns import roc1,hist1
@@ -279,18 +283,167 @@ def anal_alg(algctrl,datetimes,tracknum,event_date,
             datetimes[i],tracknum,event_date)
   return dist1ds,change,tp,fp,tn,fn
 
-def anal_1d_alg_aoi(algctrl,datetimes,tracknum,event_date,
+def anal_1d_logratio_aoi(algctrl,datetimes,tracknum,event_date,
+  algstr,data1,pre_idxs,post_idxs,ref,mask):
+  print("Computing 1D Mahalanobis distances")
+  pre = [[data1[i].view() for i in prei] for prei in pre_idxs]
+  post = [[data1[i].view() for i in posti] for posti in post_idxs]
+  metric = [[-(np.clip(compute_log_ratio(pre1,posti),-10,-1e-5))
+    for posti in post1]
+    for pre1,post1 in zip(pre,post)]
+  thresholds = anal_alg_aoi(algctrl,datetimes,tracknum,
+    event_date,algstr,metric,post_idxs,ref,mask) 
+  return thresholds
+
+def anal_1d_mahalanobis_aoi(algctrl,datetimes,tracknum,event_date,
+  algstr,data1,pre_idxs,post_idxs,ref,mask):
+  Nconfirm = algctrl['Nconfirm']
+  print("Computing 1D Mahalanobis distances")
+  zmatrix = np.zeros_like(mask,dtype='float32')
+  pre = [[data1[i].view() for i in prei] for prei in pre_idxs]
+  post = [[data1[i].view() for i in posti] for posti in post_idxs]
+  dist_objs = [compute_mahalonobis_dist_1d(pre1,post1,3,True,1e-4)
+    for pre1,post1 in zip(pre,post)]
+  metrics = [dobj.dist if dobj else
+    [zmatrix.view() for col in range(Nconfirm)]
+    for dobj in dist_objs]
+  thresholds = anal_alg_aoi(algctrl,datetimes,tracknum,
+    event_date,algstr,metrics,post_idxs,ref,mask) 
+  return thresholds
+
+def anal_2d_mahalanobis_aoi(algctrl,datetimes,tracknum,event_date,
+  algstr,data1,data2,pre_idxs,post_idxs,ref,mask):
+  Nconfirm = algctrl['Nconfirm']
+  print("Computing 2D Mahalanobis distances")
+  zmatrix = np.zeros_like(mask,dtype='float32')
+  pre_1 = [[data1[i].view() for i in prei] for prei in pre_idxs]
+  post_1 = [[data1[i].view() for i in posti] for posti in post_idxs]
+  pre_2 = [[data2[i].view() for i in prei] for prei in pre_idxs]
+  post_2 = [[data2[i].view() for i in posti] for posti in post_idxs]
+  dist_objs = [compute_mahalonobis_dist_2d(pre1,pre2,post1,post2)
+    for pre1,pre2,post1,post2 in zip(pre_1,pre_2,post_1,post_2)]
+  metrics = [dobj.dist if dobj else
+    [zmatrix.view() for col in range(Nconfirm)]
+    for dobj in dist_objs]
+  thresholds = anal_alg_aoi(algctrl,datetimes,tracknum,
+    event_date,algstr,metrics,post_idxs,ref,mask) 
+  return thresholds
+
+def anal_alg_aoi(algctrl,datetimes,tracknum,event_date,
+  algstr,metrics,post_idxs,ref,mask):
+  Nconfirm = algctrl['Nconfirm']
+  Ndatetimes = len(datetimes)
+  print(f"{algstr}: Evaluate performance using sklearn.metrics")
+  if algctrl['do_roc_plot']:
+    print("Doing roc plots")
+    fig,ax = plt.subplots()
+    plotbase = algctrl['plot_dir'] + '/roc_' + algstr + '_' + tracknum
+    plotnum = 0
+    for i in range(Ndatetimes):
+      if not metrics[i]:
+        # No data available so skip this time
+        continue
+      if datetimes[i] < event_date:
+        # Dates before event have no reference positives so skip accuracy plots
+        continue
+      print(f"{i+1}/{Ndatetimes}",end='\r')
+      for j in range(Nconfirm):
+        if j < len(metrics[i]):
+          metric = metrics[i][j]
+          # Restrict changes to AOI mask and exlcude NAN's
+          # Apply same mask to ref data
+          aoi_mask = mask & (~np.isnan(metric))
+          fpr,tpr,thresholds = roc_curve(ref[aoi_mask],metric[aoi_mask])
+          plotname = plotbase + '_' + str(i) + '_' + str(j) + '.png'
+          if plotnum == 0:
+            line1 = ax.plot(fpr,tpr)
+          else:
+            line1[0].set_data(fpr,tpr)
+          plt.xlim(0.0,1.0)
+          plt.ylim(0.0,1.0)
+          ax.set_xlabel('false positive')
+          ax.set_ylabel('true positive')
+          plt.title(f'{algstr} trk: {tracknum}, {event_date}, {datetime.strftime(datetimes[i],'%y-%m-%d')}')
+          fig.savefig(plotname,dpi=300,bbox_inches="tight")
+          plotnum += 1
+    plt.close(fig)
+  if algctrl['do_prc_plot']:
+    print("Doing prc plots")
+    fig,ax = plt.subplots()
+    plotbase = algctrl['plot_dir'] + '/prc_' + algstr + '_' + tracknum
+    plotnum = 0
+    for i in range(Ndatetimes):
+      if not metrics[i]:
+        # No data available so skip this time
+        continue
+      if datetimes[i] < event_date:
+        # Dates before event have no reference positives so skip accuracy plots
+        continue
+      print(f"{i+1}/{Ndatetimes}",end='\r')
+      for j in range(Nconfirm):
+        if j < len(metrics[i]):
+          metric = metrics[i][j]
+          # Restrict changes to AOI mask and exlcude NAN's
+          # Apply same mask to ref data
+          aoi_mask = mask & (~np.isnan(metric))
+          precision,recall,thresholds = precision_recall_curve(
+            ref[aoi_mask],metric[aoi_mask])
+          #precision,recall,f1,support = precision_recall_fscore_support(
+          #  ref[aoi_mask],metric[aoi_mask])
+          plotname = plotbase + '_' + str(i) + '_' + str(j) + '.png'
+          if plotnum == 0:
+            plt.cla()
+            line1 = ax.plot(recall,precision)
+          else:
+            line1[0].set_data(fpr,tpr)
+          plt.xlim(0.0,1.0)
+          plt.ylim(0.0,1.0)
+          ax.set_xlabel('recall')
+          ax.set_ylabel('precision')
+          plt.title(f'{algstr} trk: {tracknum}, {event_date}, {datetime.strftime(datetimes[i],'%y-%m-%d')}')
+          fig.savefig(plotname,dpi=300,bbox_inches="tight")
+          #plotnum += 1
+    plt.close(fig)
+  if algctrl['do_metric_plot']:
+    print("Doing metric image")
+    fig,ax = plt.subplots()
+    vmin1 = algctrl['metric_plot_vmin']
+    vmax1 = algctrl['metric_plot_vmax']
+    plotbase = algctrl['plot_dir'] + '/metric_' + algstr + '_' + tracknum
+    for i in range(Ndatetimes):
+      if not metrics[i]:
+        # No data available so skip this time
+        continue
+      if datetimes[i] < event_date:
+        # Dates before event have no reference positives so skip accuracy plots
+        continue
+      print(f"{i+1}/{Ndatetimes}",end='\r')
+      for j in range(Nconfirm):
+        if j < len(metrics[i]):
+          metric = metrics[i][j]
+          plotname = plotbase + '_' + str(i) + '_' + str(j) + '.png'
+          plt.cla()
+          im1 = ax.imshow(metric,cmap='gray',vmax=vmax1,vmin=vmin1)
+          plt.title(f'{algstr} trk: {tracknum}, {event_date}, {datetime.strftime(datetimes[i],'%y-%m-%d')}')
+          fig.tight_layout()
+          fig.savefig(plotname,dpi=300,bbox_inches="tight")
+    plt.close(fig)
+  print("plots done")
+
+  return thresholds
+
+def anal_1d_alg_aoi2(algctrl,datetimes,tracknum,event_date,
   algstr,data1,pre_idxs,post_idxs,thresholds,ref,mask):
   print("Computing 1D Mahalanobis distances")
   pre = [[data1[i].view() for i in prei] for prei in pre_idxs]
   post = [[data1[i].view() for i in posti] for posti in post_idxs]
   dist_objs = [compute_mahalonobis_dist_1d(pre,post,3,True,1e-4)
     for pre,post in zip(pre,post)]
-  dist1ds,change,tp,fp,tn,fn = anal_alg_aoi(algctrl,datetimes,tracknum,
+  dist1ds,change,tp,fp,tn,fn = anal_alg_aoi2(algctrl,datetimes,tracknum,
     event_date,algstr,dist_objs,post_idxs,thresholds,ref,mask) 
   return dist1ds,change,tp,fp,tn,fn
 
-def anal_alg_aoi(algctrl,datetimes,tracknum,event_date,
+def anal_alg_aoi2(algctrl,datetimes,tracknum,event_date,
   algstr,dist_objs,post_idxs,thresholds,ref_aoi,mask):
   Nconfirm = algctrl['Nconfirm']
   Ndatetimes = len(datetimes)
@@ -326,13 +479,16 @@ def anal_alg_aoi(algctrl,datetimes,tracknum,event_date,
         # Dates before event have no reference positives so skip accuracy plots
         continue
       print(f"{i+1}/{Ndatetimes}",end='\r')
+      fpi = [list(inner) for inner in zip(*fp[i])]
+      tpi = [list(inner) for inner in zip(*tp[i])]
       for j in range(Nconfirm):
-        if j < len(tp[i]):
+        if j < len(tpi):
           plotname = plotbase + '_' + str(i) + '_' + str(j) + '.png'
           if plotnum == 0:
-            line1 = ax.plot(fp[i][j],tp[i][j],marker='o')
+            line1 = ax.plot(fpi[j],tpi[j],marker='o')
           else:
-            line1[0].set_data(fp[i][j],tp[i][j])
+            line1[0].set_data(fpi[j],tpi[j])
+          #flattened_list = list(itertools.chain(*nested_list))
           plt.xlim(0.0,1.0)
           plt.ylim(0.0,1.0)
           ax.set_xlabel('false positive')
