@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from dateutil.parser import parse
 import ast
 import yaml
+import einops
 
 import distmetrics
 import data_fcns
@@ -45,6 +46,8 @@ from alg_fcns import anal_1d_mahalanobis_aoi
 from alg_fcns import anal_2d_mahalanobis_aoi
 from distmetrics import compute_mahalonobis_dist_1d
 from distmetrics import compute_mahalonobis_dist_2d
+from distmetrics import compute_transformer_zscore
+from distmetrics import load_trained_transformer_model
 from plot_fcns import prs_implot2
 from plot_fcns import prs_roc4
 from data_fcns import rasterize_shapes_to_array
@@ -164,8 +167,8 @@ algctrl = dict(
   td_lookback = timedelta(days=75),
   td_halfwindow = timedelta(days=50),
   Nconfirm = 1,
-  do_data_plot = True,
-  do_metric_plot = True,
+  do_data_plot = False,
+  do_metric_plot = False,
   metric_plot_vmin = 0.0,
   metric_plot_vmax = 5.0,
   do_dist1ds_plot = False,
@@ -186,8 +189,8 @@ try:
   do_dist2ds_plot = algctrl['do_dist2ds_plot']
   do_roc_plot = algctrl['do_roc_plot']
   plot_dir = algctrl['plot_dir']
-  #for tracknum in tracknums:
-  for tracknum in [tracknums[0]]:
+  for tracknum in tracknums:
+  #for tracknum in [tracknums[0]]:
     print(f"Track: {tracknum}")
     file_mahalanobis_track = file_mahalanobis_base + '_' + tracknum + '.pkl'
     dir_track = dir_rtc + '/track' + tracknum
@@ -255,6 +258,17 @@ try:
           prs_data,figfile)
       print("\ndone")
 
+    print("Transformer")
+    iuse = 8
+    NN = 16
+    model = load_trained_transformer_model()
+    pre_vv = [vv_data[i][1000:1000+NN,1000:1000+NN] for i in pre_idxs[iuse]]
+    pre_vh = [vh_data[i][1000:1000+NN,1000:1000+NN] for i in pre_idxs[iuse]]
+    post_vv = vv_data[iuse][1000:1000+NN,1000:1000+NN]
+    post_vh = vh_data[iuse][1000:1000+NN,1000:1000+NN]
+    tmetric = compute_transformer_zscore(model,pre_vv,pre_vh,post_vv,post_vh,
+      stride=2,batch_size=128)
+
     # Restrict to AOI for later accuracy calculations
     #ref_aoi = ref[aoi_mask]
 
@@ -270,6 +284,8 @@ try:
     #  event_date,
     #  'VV',vv_data,pre_idxs,post_idxs,
     #  thresholds,ref_aoi,aoi_mask)
+
+    print("Classical algorithms")
     thresholds = anal_1d_logratio_aoi(algctrl,datetimes,tracknum,
       event_date,'LR-VH',vh_data,pre_idxs,post_idxs,
       ref,aoi_mask)

@@ -13,7 +13,7 @@ from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import precision_recall_fscore_support
 from distmetrics import compute_mahalonobis_dist_1d
 from distmetrics import compute_mahalonobis_dist_2d
-from distmetrics import compute_log_ratio
+from distmetrics import compute_log_ratio_decrease_metric
 import data_fcns
 from plot_fcns import prs_implot2,prs_roc4
 from plot_fcns import roc1,hist1
@@ -285,14 +285,24 @@ def anal_alg(algctrl,datetimes,tracknum,event_date,
 
 def anal_1d_logratio_aoi(algctrl,datetimes,tracknum,event_date,
   algstr,data1,pre_idxs,post_idxs,ref,mask):
+  Nconfirm = algctrl['Nconfirm']
   print("Computing 1D Mahalanobis distances")
+  zmatrix = np.zeros_like(mask,dtype='float32')
   pre = [[data1[i].view() for i in prei] for prei in pre_idxs]
   post = [[data1[i].view() for i in posti] for posti in post_idxs]
-  metric = [[-(np.clip(compute_log_ratio(pre1,posti),-10,-1e-5))
+  dist_objs = [[compute_log_ratio_decrease_metric(pre1,posti)
     for posti in post1]
     for pre1,post1 in zip(pre,post)]
+  # probably need to loop Nconfirm here
+  metrics = [dobj[0].dist if dobj else
+    [zmatrix.view() for col in range(Nconfirm)]
+    for dobj in dist_objs]
+  #metric = [[-(np.clip(compute_log_ratio_decrease_metric(pre1,posti).dist,
+  #  -10.0,-1.0e-5))
+  #  for posti in post1]
+  #  for pre1,post1 in zip(pre,post)]
   thresholds = anal_alg_aoi(algctrl,datetimes,tracknum,
-    event_date,algstr,metric,post_idxs,ref,mask) 
+    event_date,algstr,metrics,post_idxs,ref,mask) 
   return thresholds
 
 def anal_1d_mahalanobis_aoi(algctrl,datetimes,tracknum,event_date,
