@@ -1,0 +1,13 @@
+event:
+  event_name: tuscany_flood_2023
+  bounds: [10.97631339, 43.81441325, 11.15319728, 43.98650075]
+  event_date: "2023-11-02"
+  pre_event_window_days: 100
+  post_event_window_days: 60
+  rtc_track_numbers: [15, 168]
+  mgrs_tiles: ['32TPP']
+  dist_hls_confirmed_change_min_days: 30
+  source_id: "Copernicus EMSN185"
+  links:
+    - "https://emergency.copernicus.eu/mapping/list-of-components/EMSN185"
+    - "https://earthobservatory.nasa.gov/images/152051/flooding-in-tuscany"

@@ -1,0 +1,13 @@
+event:
+  event_name: mai_mahiu_flood_and_landslides_2024
+  bounds: [36.56645031, -1.32126631, 37.13272135, -0.92335618]
+  event_date: "2024-04-29"
+  pre_event_window_days: 100
+  post_event_window_days: 60
+  rtc_track_numbers: [130, 57]
+  mgrs_tiles: ['37MBU']
+  dist_hls_confirmed_change_min_days: 30
+  source_id: "UNOSAT via humanitarian data exchange - Pléiades image"
+  links:
+    - "https://data.humdata.org/dataset/landslide-mudslide-impact-in-mai-mahiu-and-kijabe-towns-kenya-as-of-1-may-2024"
+    - "https://eos.org/thelandslideblog/mai-mahiu"

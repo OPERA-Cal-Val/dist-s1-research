@@ -1,0 +1,12 @@
+event:
+  event_name: papau_new_guinea_landslide_2024
+  bounds: [143.3,  -5.4, 143.4,  -5.3]
+  event_date: '2024-05-24'
+  pre_event_window_days: 100
+  post_event_window_days: 60
+  rtc_track_numbers: [9, 133]
+  mgrs_tiles: [54MYV]
+  dist_hls_confirmed_change_min_days: 15
+  source_id: 'Al Handwerger derived from Planet 3m'
+  links:
+      - 'https://www.cnn.com/2024/05/28/asia/papua-new-guinea-landslide-satellite-imagery-intl/index.html'

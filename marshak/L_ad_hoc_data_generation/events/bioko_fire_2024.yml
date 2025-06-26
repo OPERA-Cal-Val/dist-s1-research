@@ -1,0 +1,13 @@
+event:
+  event_name: bioko_fire_2024
+  bounds: [8.73555504, 3.56664088, 8.7688816 , 3.59751284]
+  event_date: "2024-02-07"
+  pre_event_window_days: 100
+  post_event_window_days: 60
+  rtc_track_numbers: [30, 51]
+  mgrs_tiles: ['32NMJ']
+  dist_hls_confirmed_change_min_days: 30
+  source_id: "UNOSAT via humanitarian data exchange - Sentinel-2"
+  links:
+    - "data: https://data.humdata.org/dataset/areas-burned-from-february-3rd-to-18th-2024-around-the-pico-basil-volcano-on-bioko-island-"
+    - "https://go.ifrc.org/emergencies/6858/details"

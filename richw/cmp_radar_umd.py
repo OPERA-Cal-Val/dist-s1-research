@@ -220,7 +220,7 @@ for index, row in df_val_bursts_subset.iterrows():
       pre_vv = [vv_data[i] for i in iuse_vv]
       pre_vh = [vh_data[i] for i in iuse_vh]
       dist_ob = distmetrics.compute_mahalonobis_dist_2d(pre_vv,pre_vh,
-        vv_data[i],vh_data[i],kernel_size=3)
+        vv_data[i],vh_data[i],window_size=3)
       # Only the middle point of the 3x3 matrix is valid
       # The middle point also corresponds to the test site
       dist_ob_list.append(dist_ob.dist[1][1])

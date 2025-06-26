@@ -1,0 +1,12 @@
+event:
+  event_name: smokehouse_creek_fire_2024 
+  bounds: [-101.54123593, 35.53176534, -99.89106839, 36.05943529]
+  event_date: "2024-02-26"
+  pre_event_window_days: 100
+  post_event_window_days: 60
+  rtc_track_numbers: [5, 12]
+  mgrs_tiles: ['14SKE', '14SLE', '14SME']
+  dist_hls_confirmed_change_min_days: 30
+  source_id: 'WFIGS Smokehouse Creek Fire 2024'
+  links:
+    - "https://en.wikipedia.org/wiki/Smokehouse_Creek_Fire"

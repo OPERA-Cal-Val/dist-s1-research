@@ -1,0 +1,37 @@
+\makeatletter % get access to title, date, author macros
+\begin{titlepage}
+    \parindent0pt
+    \vspace*{1cm}
+
+    \includegraphics[width=3.5in]{fig/nasa-jpl-logo}
+
+    \Huge
+    \textbf{\@title}
+
+    \vfill
+    \Large
+
+    \adtversionname
+
+    \@date
+
+    \vspace{0.5cm}
+
+    \@author
+
+    \vfill
+
+    \footnotesize
+    National Aeronautics and\\
+    Space Administration
+
+    Jet Propulsion Laboratory \\
+    California Institute of Technology \\
+    Pasadena, California
+
+    \vfill
+    {\footnotesize This document has been reviewed and determined not to contain export-controlled data. JPL/Caltech Proprietary Business Discreet. Caltech Record. Not for Public Distribution. Paper copies of this document may not be current and should not be relied on for official purposes. LRS number: LRR083444.}
+    \thispagestyle{empty}
+
+\end{titlepage}
+\makeatother
