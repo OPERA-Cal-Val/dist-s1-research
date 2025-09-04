@@ -8,6 +8,7 @@ import data_fcns
 import warnings
 from datetime import datetime, timedelta
 from dateutil.parser import parse
+import contextily as ctx
 
 def plot_rtc(df_rtc_ts_wind,figfile,df_site):
   POL_RATIO_PLOT = False
@@ -179,3 +180,49 @@ def prs_dathist2(chanstr1,data1,name1,vmin1,vmax1,nbins1,binrange1,
   pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
   plt.close(fig)
 
+def plot_mgrs(fname,df_mgrs1,df_point,bbox):
+  mgrs_tile_id = df_mgrs1['mgrs_tile_id'][0]
+  df_mgrs1_plot = df_mgrs1.copy()
+  df_mgrs1_plot.geometry = df_mgrs1_plot.geometry.boundary
+  fig,ax = plt.subplots()
+  df_mgrs1_plot.plot(column="mgrs_tile_id", categorical=True, legend=True, ax=ax)
+  df_point.plot(ax=ax)
+  x,y = bbox.exterior.xy
+  plt.plot(x,y,color='green')
+  ctx.add_basemap(ax,crs=df_mgrs1_plot.crs.to_string())
+  plt.title(f'MGRS {mgrs_tile_id}')
+  fig.tight_layout()
+  fig.savefig(fname,dpi=300,bbox_inches="tight")
+
+def plot_mgrs_bursts(fname,df_mgrs1,df_point,bbox,df_bursts):
+  mgrs_tile_id = df_mgrs1['mgrs_tile_id'][0]
+  df_mgrs1_plot = df_mgrs1.copy()
+  df_mgrs1_plot.geometry = df_mgrs1_plot.geometry.boundary
+  fig,ax = plt.subplots()
+  df_mgrs1_plot.plot(column="mgrs_tile_id", categorical=True, legend=True, ax=ax)
+  if df_point is not None:
+      df_point.plot(ax=ax)
+  if bbox is not None:
+      x,y = bbox.exterior.xy
+      plt.plot(x,y,color='green')
+
+  df_bursts_plot = df_bursts.copy()
+  df_bursts_plot.geometry = df_bursts_plot.geometry.boundary
+  df_bursts_plot.plot(column="track_number",categorical=True,ax=ax,legend=True)
+  leg = ax.get_legend()
+  leg.set_title("Track Numbers")
+  ctx.add_basemap(ax,crs=df_mgrs1_plot.crs.to_string())
+  plt.title(f'MGRS {mgrs_tile_id}')
+  fig.tight_layout()
+  fig.savefig(fname,dpi=300,bbox_inches="tight")
+
+def hist_df(df,col,plotname,nbins):
+  plt.clf()
+  df[col].hist(bins=nbins)
+  plt.xlabel(col)
+  plt.ylabel('Frequency')
+  plt.title('Histogram of ' + col)
+  plt.tight_layout()
+  plt.savefig(plotname + '_hist.png',dpi=300,bbox_inches="tight")
+  
+  
