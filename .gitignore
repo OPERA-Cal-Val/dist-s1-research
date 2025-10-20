@@ -154,3 +154,11 @@ marshak/10_ad_hoc_data_generation/out_notebooks
 
 # Claude
 claude.md
+
+# PMTiles data
+*.pmtiles
+
+# Confirmed products/unconfirmed products
+**/confirmed_products/
+**/unconfirmed_products/
+**/tmp/
