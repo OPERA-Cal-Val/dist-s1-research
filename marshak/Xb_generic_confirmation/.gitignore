@@ -1,0 +1,6 @@
+*.csv
+unconfirmed_products*/
+tmp*/
+0_confirmation-*.ipynb
+0_confirmation_*.ipynb
+*.tmp
