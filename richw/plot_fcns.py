@@ -1,14 +1,18 @@
 #! /usr/bin/env python
 
+from pathlib import Path
 from pptx import Presentation
 from pptx.util import Inches
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
 import pandas as pd
 import data_fcns
 import warnings
 from datetime import datetime, timedelta
 from dateutil.parser import parse
 import contextily as ctx
+import numpy as np
 
 def plot_rtc(df_rtc_ts_wind,figfile,df_site):
   POL_RATIO_PLOT = False
@@ -216,13 +220,226 @@ def plot_mgrs_bursts(fname,df_mgrs1,df_point,bbox,df_bursts):
   fig.tight_layout()
   fig.savefig(fname,dpi=300,bbox_inches="tight")
 
-def hist_df(df,col,plotname,nbins):
+def hist_df(df,col,titlestr,plotpath,nbins):
   plt.clf()
   df[col].hist(bins=nbins)
   plt.xlabel(col)
   plt.ylabel('Frequency')
-  plt.title('Histogram of ' + col)
+  plt.title(titlestr)
   plt.tight_layout()
-  plt.savefig(plotname + '_hist.png',dpi=300,bbox_inches="tight")
+  filepath = Path(str(plotpath) + '_hist.png')
+  plt.savefig(filepath,dpi=300,bbox_inches="tight")
+  return filepath
   
-  
+def implot_gdf(gdf,col_loc,col_value,titlestr,cmap,plotpath):
+  plt.clf()  
+  # Extract lon/lat from midpoint points (assumes CRS is geographic)
+  x = gdf[col_loc].x
+  y = gdf[col_loc].y
+
+  if isinstance(cmap,dict):
+      v = gdf[col_value].to_numpy()
+      colors = np.array([cmap.get(int(s),(1,1,1,1)) for s in v])
+      keys = sorted(cmap.keys())
+      cmap_list = [cmap[k] for k in keys]
+      # Build colormap and norm in data space (days)
+      listed_cmap = mcolors.ListedColormap(cmap_list)
+      bounds = keys + [keys[-1] + 1] # one more than last key
+      norm = mcolors.BoundaryNorm(bounds,listed_cmap.N)
+      sc = plt.scatter(
+        x, y,
+        c=colors,
+        s=7,
+        marker="s",
+        linewidths=0
+      )
+      # Colorbar uses the norm and colormap in days
+      ax = plt.gca()
+      sm = cm.ScalarMappable(norm=norm, cmap=listed_cmap)
+      sm.set_array([])  # required in some Matplotlib versions
+      cbar = plt.colorbar(sm, ax=ax)
+  else:
+      v = gdf[col_value]
+      sc = plt.scatter(
+        x, y,
+        c=v,
+        s=5,
+        cmap=cmap,
+        marker="s",
+        linewidths=0
+      )
+      ax = plt.gca()
+      cbar = plt.colorbar(sc, ax=ax, label=col_value)
+
+  plt.xlabel("Longitude")
+  plt.ylabel("Latitude")
+  plt.title(titlestr)
+  plt.tight_layout()
+  filepath = Path(str(plotpath) + '.png')
+  plt.savefig(filepath,dpi=300,bbox_inches="tight")
+  return filepath
+
+def cmap_dict(cmap_boundaries):
+    rgbk_colors = [(0,0,0,255), # black
+        (127,0,255,255), # purple
+        (0,0,255,255),   # dark blue
+        (0,128,255,255), # light blue
+        (0,255,255,255), # cyan
+        (0,255,128,255), # blue-green
+        (0,255,0,255),   # green
+        (128,255,0,255), # yellow-green
+        (255,255,0,255), # yellow
+        (255,128,0,255), # orange
+        (255,0,0,255),   # red
+        (255,0,127,255), # purple red
+        (255,0,255,255)  # violet
+        ]
+    Nb = len(cmap_boundaries)
+    Ncolors = len(rgbk_colors)
+    if Nb != Ncolors + 1:
+        print("Warning: length mismatch in cmap_dict")
+    tw_span_cmap = {}
+    for icolor in range(0,Ncolors):
+        for k in range(cmap_boundaries[icolor],cmap_boundaries[icolor+1]):
+            tw_span_cmap[k] = tuple(x/255 for x in rgbk_colors[icolor])
+
+    return tw_span_cmap,rgbk_colors
+
+def add_image_grid_slides(
+    prs,
+    image_paths,
+    grid,
+    margins=(Inches(0.5), Inches(0.5), Inches(0.5), Inches(0.5)),
+    keep_aspect=True,
+    slide_layout_index=6,
+):
+    """
+    Add one or more slides to `prs` with images arranged in a grid.
+
+    Each slide shows up to `rows * cols` images. If the number of images
+    is an exact multiple of the grid size, all slides are filled.
+    """
+    rows, cols = grid
+    left_margin, top_margin, right_margin, bottom_margin = margins
+
+    slide_width = prs.slide_width
+    slide_height = prs.slide_height  # from Presentation, not Slide.
+
+    cell_width = (slide_width - left_margin - right_margin) / cols
+    cell_height = (slide_height - top_margin - bottom_margin) / rows
+
+    max_per_slide = rows * cols
+    slides = []
+
+    # process images in chunks of max_per_slide
+    for start in range(0, len(image_paths), max_per_slide):
+        chunk = image_paths[start : start + max_per_slide]
+
+        slide = prs.slides.add_slide(prs.slide_layouts[slide_layout_index])
+        slides.append(slide)
+
+        for idx, img_path in enumerate(chunk):
+            r = idx // cols
+            c = idx % cols
+
+            cell_left = left_margin + c * cell_width
+            cell_top = top_margin + r * cell_height
+
+            pic = slide.shapes.add_picture(
+                img_path,
+                cell_left,
+                cell_top,
+                width=cell_width,
+                height=cell_height,
+            )
+
+            if keep_aspect:
+                # scale to fit cell while preserving aspect
+                scale_w = cell_width / pic.width
+                scale_h = cell_height / pic.height
+                scale = min(scale_w, scale_h)
+
+                new_width = int(pic.width * scale)
+                new_height = int(pic.height * scale)
+
+                pic.left = int(cell_left) + int((cell_width - new_width) / 2)
+                pic.top = int(cell_top) + int((cell_height - new_height) / 2)
+                pic.width = new_width
+                pic.height = new_height
+
+    return slides
+
+def add_image_grid_slide(
+    prs,
+    image_paths,
+    grid,
+    margins=(Inches(0.5), Inches(0.5), Inches(0.5), Inches(0.5)),
+    keep_aspect=True,
+    slide_layout_index=6,
+):
+    """
+    Add a slide to `prs` with images arranged in a grid.
+
+    Parameters
+    ----------
+    prs : pptx.Presentation
+        Existing Presentation object.
+    image_paths : list of str
+        List of image filenames (paths). Extra cells stay empty if there
+        are fewer images than grid cells; extra images are ignored.
+    grid : (rows, cols)
+        Tuple like (2, 3) for 2 rows × 3 columns.
+    margins : (left, top, right, bottom)
+        Margins around the slide, pptx length units (e.g., Inches()).
+    keep_aspect : bool
+        If True, scale images to fit cell while preserving aspect ratio.
+        If False, images are stretched to fill the cell.
+    slide_layout_index : int
+        Layout index to use for the slide (6 is usually a blank slide).
+    """
+    rows, cols = grid
+    left_margin, top_margin, right_margin, bottom_margin = margins
+
+    slide = prs.slides.add_slide(prs.slide_layouts[slide_layout_index])
+
+    slide_width = prs.slide_width
+    slide_height = prs.slide_height  # default depends on template. [web:25]
+
+    cell_width = (slide_width - left_margin - right_margin) / cols
+    cell_height = (slide_height - top_margin - bottom_margin) / rows
+
+    for idx, img_path in enumerate(image_paths):
+        if idx >= rows * cols:
+            break
+
+        r = idx // cols
+        c = idx % cols
+
+        cell_left = left_margin + c * cell_width
+        cell_top = top_margin + r * cell_height
+
+        # First add picture sized to cell, then optionally adjust to keep aspect.
+        pic = slide.shapes.add_picture(
+            img_path,
+            cell_left,
+            cell_top,
+            width=cell_width,
+            height=cell_height,
+        )  # [web:19][web:20]
+
+        if keep_aspect:
+            # Compute scale to fit inside cell while preserving aspect ratio.
+            scale_w = cell_width / pic.width
+            scale_h = cell_height / pic.height
+            scale = min(scale_w, scale_h)
+
+            new_width = int(pic.width * scale)
+            new_height = int(pic.height * scale)
+
+            # Center the image within the cell.
+            pic.left = int(cell_left) + int((cell_width - new_width) / 2)
+            pic.top = int(cell_top) + int((cell_height - new_height) / 2)
+            pic.width = new_width
+            pic.height = new_height
+
+    return slide
