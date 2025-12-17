@@ -25,14 +25,14 @@ def unzip_dist_s1_prod(zip_path: Path, unconfirmed_products_dir=None, use_zip_pa
         unconfirmed_products_dir = Path(f'unconfirmed_products')
     unconfirmed_products_dir.mkdir(parents=True, exist_ok=True)
     if use_zip_parent:
-        dst_dir = Path(f'unconfirmed_products/{zip_path.parent.name}/{mgrs_tile_id}')
+        dst_dir = Path(f'{unconfirmed_products_dir}/{zip_path.parent.name}/{mgrs_tile_id}')
     else:
-        dst_dir = Path(f'unconfirmed_products/{mgrs_tile_id}')
+        dst_dir = Path(f'{unconfirmed_products_dir}/{mgrs_tile_id}')
     dst_dir.mkdir(exist_ok=True, parents=True)
     unzip_file(zip_path, dst_dir)
     return zip_path.name
 
-def wrap_run_sequential_confirmation_of_dist_products_workflow(unconfirmed_product_ts_dir, confirmed_products_dir=None, unconfirmed_products_dir=None):
+def wrap_run_sequential_confirmation_of_dist_products_workflow(unconfirmed_product_ts_dir, confirmed_products_dir=None, unconfirmed_products_dir=None, confirm_kwargs: dict | None = None):
     if unconfirmed_products_dir is None:
         unconfirmed_products_dir = Path('unconfirmed_products')
     unconfirmed_products_dir.mkdir(parents=True, exist_ok=True)
@@ -41,8 +41,10 @@ def wrap_run_sequential_confirmation_of_dist_products_workflow(unconfirmed_produ
         confirmed_products_dir = Path('confirmed_products')
     confirmed_products_dir.mkdir(parents=True, exist_ok=True)
 
+    confirm_kwargs = confirm_kwargs or {}
     target_dir = confirmed_products_dir / unconfirmed_product_ts_dir.relative_to(unconfirmed_products_dir)
     run_sequential_confirmation_of_dist_products_workflow(
         unconfirmed_product_ts_dir, 
-        target_dir
+        target_dir,
+        **confirm_kwargs
     )
