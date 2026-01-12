@@ -21,6 +21,6 @@ for site_id in tqdm(site_ids):
     out_nb_path = out_nb_dir / f"{site_id}.ipynb"
     pm.execute_notebook(
         "0_viz_it_all.ipynb",
-        out_nb_path,
+        str(out_nb_path),
         parameters=dict(SITE_ID=site_id, DIST_S1_DATA_DIR=dist_s1_data_dir),
     )
