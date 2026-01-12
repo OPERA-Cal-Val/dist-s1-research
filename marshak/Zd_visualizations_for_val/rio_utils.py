@@ -7,8 +7,6 @@ from rasterio.windows import Window, transform as window_transform
 from rasterio.transform import array_bounds, from_origin, rowcol
 from rasterio.warp import transform_bounds
 from rasterio import default_gtiff_profile
-from dem_stitcher.rio_tools import reproject_profile_to_new_crs
-from rasterio.crs import CRS
 
 
 def get_row_col_from_profile(profile: dict, lon: float, lat: float) -> tuple[int, int]:
@@ -69,7 +67,6 @@ def get_profile_from_extent(
     width,
     src_crs: str,
     dtype: str = "float32",
-    dst_crs: CRS | None = None,
     count: int = 1,
     nodata: float | int | None = None,
 ) -> dict:
@@ -85,16 +82,16 @@ def get_profile_from_extent(
     if resx != resy:
         raise ValueError("x and y resolutions are not equal")
     transform = from_origin(x[0] - resx / 2, y[-1] + resy / 2, resx, resy)
-    profile = default_gtiff_profile.copy()
-    profile.update(
-        dtype=dtype,
-        count=count,
-        height=height,
-        width=width,
-        crs=src_crs,
-        transform=transform,
-        nodata=nodata,
+    dst_profile = default_gtiff_profile.copy()
+    dst_profile.update(
+        dict(
+            dtype=dtype,
+            count=count,
+            height=height,
+            width=width,
+            crs=src_crs,
+            transform=transform,
+            nodata=nodata,
+        )
     )
-    if dst_crs is not None:
-        profile = reproject_profile_to_new_crs(profile, dst_crs)
-    return profile
+    return dst_profile
