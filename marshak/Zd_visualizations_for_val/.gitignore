@@ -1,4 +1,6 @@
 out_nbs/
 out/
+out_all/
+out_hard/
 dist-s1-data/
 .env
