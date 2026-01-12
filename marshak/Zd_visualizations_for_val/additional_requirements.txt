@@ -1,4 +1,4 @@
-pdf2image
+img2pdf
 python-dotenv
 reverse_geocoder
 papermill
