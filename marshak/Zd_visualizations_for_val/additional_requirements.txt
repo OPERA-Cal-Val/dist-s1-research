@@ -4,3 +4,4 @@ reverse_geocoder
 papermill
 earthaccess
 cartopy
+pycountry
