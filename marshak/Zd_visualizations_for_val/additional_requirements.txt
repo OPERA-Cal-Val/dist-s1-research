@@ -3,3 +3,4 @@ python-dotenv
 reverse_geocoder
 papermill
 earthaccess
+cartopy
