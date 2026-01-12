@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from dateutil.parser import parse
 import contextily as ctx
 import numpy as np
+import imageio.v2 as imageio
+import cv2
 
 def plot_rtc(df_rtc_ts_wind,figfile,df_site):
   POL_RATIO_PLOT = False
@@ -215,7 +217,7 @@ def plot_mgrs_bursts(fname,df_mgrs1,df_point,bbox,df_bursts):
   df_bursts_plot.plot(column="track_number",categorical=True,ax=ax,legend=True)
   leg = ax.get_legend()
   leg.set_title("Track Numbers")
-  ctx.add_basemap(ax,crs=df_mgrs1_plot.crs.to_string())
+  #ctx.add_basemap(ax,crs=df_mgrs1_plot.crs.to_string())
   plt.title(f'MGRS {mgrs_tile_id}')
   fig.tight_layout()
   fig.savefig(fname,dpi=300,bbox_inches="tight")
@@ -319,6 +321,9 @@ def add_image_grid_slides(
     Each slide shows up to `rows * cols` images. If the number of images
     is an exact multiple of the grid size, all slides are filled.
     """
+
+    # Convert incoming Path objects to string paths
+    image_paths = [str(p) for p in image_paths]
     rows, cols = grid
     left_margin, top_margin, right_margin, bottom_margin = margins
 
@@ -350,17 +355,17 @@ def add_image_grid_slides(
                 cell_left,
                 cell_top,
                 width=cell_width,
-                height=cell_height,
             )
 
             if keep_aspect:
                 # scale to fit cell while preserving aspect
-                scale_w = cell_width / pic.width
-                scale_h = cell_height / pic.height
-                scale = min(scale_w, scale_h)
-
-                new_width = int(pic.width * scale)
-                new_height = int(pic.height * scale)
+                if pic.height > cell_height:
+                    scale = cell_height / pic.height
+                    new_width = int(pic.width * scale)
+                    new_height = int(pic.height * scale)
+                else:
+                    new_width = pic.width
+                    new_height = pic.height
 
                 pic.left = int(cell_left) + int((cell_width - new_width) / 2)
                 pic.top = int(cell_top) + int((cell_height - new_height) / 2)
@@ -443,3 +448,57 @@ def add_image_grid_slide(
             pic.height = new_height
 
     return slide
+
+
+def pngs_to_gif(png_paths, out_path, fps=5):
+    images = [imageio.imread(p) for p in png_paths]
+    imageio.mimsave(out_path, images, fps=fps)
+
+# Example
+#png_paths = [Path("frame1.png"), Path("frame2.png"), Path("frame3.png")]
+#pngs_to_gif(png_paths, "animation.gif", fps=5)
+
+def pngs_to_mp4(png_paths, out_path, fps=5):
+
+    org = (100,100)
+    font = cv2.FONT_HERSHEY_SIMPLEX    # built‑in font
+    font_scale = 2.0
+    color = (0, 255, 0)                # BGR: green
+    thickness = 2
+    line_type = cv2.LINE_AA
+
+    frames = []
+    for fname in png_paths:
+        parts = str(fname).split("_")
+        acq_str = parts[4]
+        img = cv2.imread(fname)
+        # Put acquisition date on image
+        cv2.putText(img,acq_str,org,font,font_scale,color,thickness,line_type)
+        frames.append(img)
+
+    height, width, channels = frames[0].shape
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
+
+    for frame in frames:
+        writer.write(frame)
+
+    writer.release()
+
+    return out_path
+
+def plot_val_ref(fpath,ref_str_to_int,dates,arr1,titlestr):
+    y_int = np.array([ref_str_to_int[s] for s in arr1])
+
+    fig, ax = plt.subplots()
+    ax.plot(dates, y_int, marker="o")
+
+    # Set y-ticks and labels to show the original strings
+    ax.set_yticks(list(ref_str_to_int.values()))
+    ax.set_yticklabels(list(ref_str_to_int.keys()))
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Category")
+    plt.title(titlestr)
+    plt.tight_layout()
+    fig.savefig(fpath,dpi=300,bbox_inches="tight")
