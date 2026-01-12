@@ -2,3 +2,4 @@ pdf2image
 python-dotenv
 reverse_geocoder
 papermill
+earthaccess
