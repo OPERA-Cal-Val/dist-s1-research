@@ -12,18 +12,18 @@ dist_s1_data_dir = Path(os.getenv("DIST_S1_DATA_DIR"))
 
 ### Sites #########################################################
 # Hard Sites (no change in validation but in DIST-S1)
-# site_ids = pd.read_csv('reference_tables/nochange_ALLsub_conf.csv')[['ID'].tolist()
+site_ids = pd.read_csv("reference_tables/nochange_ALLsub_conf.csv")["ID"].tolist()
 
 # Manual
 # site_ids = ["40284_2", "913366_4", "97785_11", "372152_4"]
 
 # All Sites
-site_ids = pd.read_csv("reference_tables/selectedpointsLL.csv")["ID"].tolist()
+# site_ids = pd.read_csv("reference_tables/selectedpointsLL.csv")["ID"].tolist()
 
 out_nb_dir = Path("out_nbs")
 out_nb_dir.mkdir(parents=True, exist_ok=True)
 
-out_dir = Path("out_all")
+out_dir = Path("out_hard")
 out_dir.mkdir(parents=True, exist_ok=True)
 
 for site_id in tqdm(site_ids):
