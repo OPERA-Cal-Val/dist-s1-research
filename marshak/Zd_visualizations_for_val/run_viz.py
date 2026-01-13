@@ -18,7 +18,7 @@ dist_s1_data_dir = Path(os.getenv("DIST_S1_DATA_DIR"))
 # site_ids = ["40284_2", "913366_4", "97785_11", "372152_4"]
 
 # All Sites
-site_ids = pd.read_csv("reference_tables/selectedpointsLL.csv")[["ID"].tolist()]
+site_ids = pd.read_csv("reference_tables/selectedpointsLL.csv")["ID"].tolist()
 
 out_nb_dir = Path("out_nbs")
 out_nb_dir.mkdir(parents=True, exist_ok=True)
