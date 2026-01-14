@@ -28,6 +28,7 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 for site_id in tqdm(site_ids):
     out_nb_path = out_nb_dir / f"{site_id}.ipynb"
+    print(f"{site_id=}...")
     pm.execute_notebook(
         "0_viz_it_all.ipynb",
         out_nb_path,
