@@ -11,6 +11,7 @@ from dem_stitcher.rio_window import get_window_from_extent
 from rasterio.session import AWSSession
 from rasterio.crs import CRS
 from shapely.geometry import Polygon
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 from tqdm import tqdm
 
 # CMR Concept ID for OPERA RTC-S1 from ASF
@@ -67,6 +68,7 @@ def get_granule_https_links(
     return all_links
 
 
+@retry(stop=stop_after_attempt(5), wait=wait_random_exponential(multiplier=1, max=60))
 def read_one_earthdata_url(
     url: str,
     extent: tuple[float, float, float, float] | None = None,
