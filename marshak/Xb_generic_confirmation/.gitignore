@@ -3,6 +3,5 @@ tmp*/
 0_confirmation-*.ipynb
 0_confirmation_*.ipynb
 *.tmp
-*.csv
-!dist-s1-events_v1_32_10max.csv
-!dist-s1-events_v1_32_20max.csv
+deprecated/
+out/
