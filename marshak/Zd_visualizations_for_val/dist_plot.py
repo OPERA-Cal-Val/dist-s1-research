@@ -36,7 +36,9 @@ def get_colorbar_label(label: str, include_numerical_vals: bool = False) -> str:
     return color_label_map[label]
 
 
-def add_dist_s1_colorbar(cax: Axes, short_labels: bool = False, include_numerical_vals: bool = True) -> Colorbar:
+def add_dist_s1_colorbar(
+    cax: Axes, short_labels: bool = False, include_numerical_vals: bool = True
+) -> Colorbar:
     mpl_cmap, norm = get_dist_s1_mpl_cmap()
     values = sorted(DIST_STATUS_CMAP.keys())
 
@@ -47,7 +49,10 @@ def add_dist_s1_colorbar(cax: Axes, short_labels: bool = False, include_numerica
     tick_positions.append(values[-1] + 0.5)
     cb.set_ticks(tick_positions)
 
-    labels = [get_colorbar_label(val, include_numerical_vals=include_numerical_vals) for val in values]
+    labels = [
+        get_colorbar_label(val, include_numerical_vals=include_numerical_vals)
+        for val in values
+    ]
     cb.set_ticklabels(labels)
 
     return cb
