@@ -3,9 +3,12 @@
 from pathlib import Path
 from pptx import Presentation
 from pptx.util import Inches
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.cm as cm
+from matplotlib.patches import Patch
 import pandas as pd
 import data_fcns
 import warnings
@@ -15,6 +18,7 @@ import contextily as ctx
 import numpy as np
 import imageio.v2 as imageio
 import cv2
+import re
 
 def plot_rtc(df_rtc_ts_wind,figfile,df_site):
   POL_RATIO_PLOT = False
@@ -185,6 +189,59 @@ def prs_dathist2(chanstr1,data1,name1,vmin1,vmax1,nbins1,binrange1,
   width = Inches(4)
   pic = slide.shapes.add_picture(tmpname,left,top,width=width,height=height)
   plt.close(fig)
+
+def plot_gdf_geoms(basename,gdfs,legend_cols,titlestr=None,cmap='tab10'):
+    """
+    basename: output filename (.png will be added)
+    gdfs: list of GeoDataFrames
+    legend_cols: list of column names (same length as gdfs),
+                 each giving the category/label for that GeoDataFrame
+                 or a column to read labels from
+    """
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # pick a color per GeoDataFrame
+    total_len = sum(len(gdf) for gdf in gdfs)
+    colors = plt.get_cmap(cmap)(range(total_len))
+    black = [0.0,0.0,0.0,1.0]
+
+    legend_handles = []
+
+    icolor = 0
+    for gdf0, col_name, in zip(gdfs, legend_cols):
+        gdf = gdf0.copy()
+        gdf.geometry = gdf0.geometry.where(
+            gdf0.geometry.geom_type == "Point",
+            gdf0.geometry.boundary)
+        # if col_name is a column in the gdf, use unique values as labels
+        if col_name in gdf.columns:
+            # categorical legend from that column
+            for value in gdf[col_name].unique():
+                color = colors[icolor]
+                icolor = icolor + 1
+                subset = gdf[gdf[col_name] == value]
+                subset.plot(ax=ax, color=color, label=str(value))
+                # keep one handle per unique label
+                legend_handles.append(Patch(facecolor=color, label=str(value)))
+        else:
+            # treat col_name as a fixed label for the whole GeoDataFrame
+            color = colors[icolor]
+            icolor = icolor + 1
+            gdf.plot(ax=ax, color=color)
+            legend_handles.append(Patch(facecolor=color, label=str(col_name)))
+
+    ax.set_axis_off()
+    # use unique handles to avoid duplicate labels
+    unique_handles = {h.get_label(): h for h in legend_handles}.values()
+    ax.legend(handles=unique_handles, loc='best', title='Layers')
+
+    if titlestr is None:
+        titlestr = basename
+    fname = basename + '.png'
+    plt.title(titlestr)
+    plt.tight_layout()
+    fig.savefig(fname,dpi=300,bbox_inches="tight")
 
 def plot_mgrs(fname,df_mgrs1,df_point,bbox):
   mgrs_tile_id = df_mgrs1['mgrs_tile_id'][0]
@@ -451,14 +508,68 @@ def add_image_grid_slide(
 
 
 def pngs_to_gif(png_paths, out_path, fps=5):
-    images = [imageio.imread(p) for p in png_paths]
-    imageio.mimsave(out_path, images, fps=fps)
+    # commented out code uses too much memory
+    #images = [imageio.imread(p) for p in png_paths]
+    #imageio.mimsave(out_path, images, fps=fps)
+    if len(png_paths) == 0:
+        return out_path
+    duration = 1.0 / fps  # seconds per frame (for most imageio GIF writers)
+    with imageio.get_writer(out_path, mode="I", duration=duration) as writer:
+        for p in png_paths:
+            frame = imageio.imread(p)
+            writer.append_data(frame)
 
-# Example
-#png_paths = [Path("frame1.png"), Path("frame2.png"), Path("frame3.png")]
-#pngs_to_gif(png_paths, "animation.gif", fps=5)
-
+# Below modified to reduce memory footprint
 def pngs_to_mp4(png_paths, out_path, fps=5):
+    if len(png_paths) == 0:
+        return out_path
+
+    org = (100, 100)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 2.0
+    color = (0, 255, 0)
+    thickness = 2
+    line_type = cv2.LINE_AA
+
+    # Read first frame to determine size
+    first_img = cv2.imread(png_paths[0])
+    if first_img is None:
+        raise ValueError(f"Could not read first image: {png_paths[0]}")
+    height, width, channels = first_img.shape
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
+
+    # Helper to get label string from filename
+    def get_acq_str(fname):
+        parts = re.split(r"[._]", str(fname))
+        parts_digitstart = [s for s in parts if re.match(r"^\d", s)]
+        return parts_digitstart[0] if parts_digitstart else str(fname)
+
+    # Process and write frames one by one
+    for fname in png_paths:
+        img = cv2.imread(fname)
+        if img is None:
+            print("Warning: could not read", fname)
+            continue
+
+        if img.shape != first_img.shape:
+            print("Size mismatch:", fname, img.shape, first_img.shape)
+            # Optionally resize to match first frame:
+            # img = cv2.resize(img, (width, height))
+
+        # Optional annotation:
+        # acq_str = get_acq_str(fname)
+        # cv2.putText(img, acq_str, org, font, font_scale, color, thickness, line_type)
+
+        writer.write(img)
+
+    writer.release()
+    return out_path
+
+def pngs_to_mp4_org(png_paths, out_path, fps=5):
+    if len(png_paths) == 0:
+        return out_path
 
     org = (100,100)
     font = cv2.FONT_HERSHEY_SIMPLEX    # built‑in font
@@ -469,12 +580,18 @@ def pngs_to_mp4(png_paths, out_path, fps=5):
 
     frames = []
     for fname in png_paths:
-        parts = str(fname).split("_")
-        acq_str = parts[4]
+        parts = re.split(r'[._]',str(fname))
+        parts_digitstart = [s for s in parts if re.match(r'^\d', s)]
+        # Use date string, or just filename
+        acq_str = fname
+        if len(parts_digitstart) > 0:
+            acq_str = parts_digitstart[0]
         img = cv2.imread(fname)
         # Put acquisition date on image
-        cv2.putText(img,acq_str,org,font,font_scale,color,thickness,line_type)
+        #cv2.putText(img,acq_str,org,font,font_scale,color,thickness,line_type)
         frames.append(img)
+        if img.shape != frames[0].shape:
+            print("Size mismatch:",fname,img.shape,frames[0].shape)
 
     height, width, channels = frames[0].shape
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -488,6 +605,8 @@ def pngs_to_mp4(png_paths, out_path, fps=5):
     return out_path
 
 def plot_val_ref(fpath,ref_str_to_int,dates,arr1,titlestr):
+    if len(dates) == 0 or len(arr1) == 0:
+        return
     y_int = np.array([ref_str_to_int[s] for s in arr1])
 
     fig, ax = plt.subplots()
@@ -502,3 +621,42 @@ def plot_val_ref(fpath,ref_str_to_int,dates,arr1,titlestr):
     plt.title(titlestr)
     plt.tight_layout()
     fig.savefig(fpath,dpi=300,bbox_inches="tight")
+
+def plot_val_rtc(fpath,dates,arr1,titlestr):
+    if len(dates) == 0 or len(arr1) == 0:
+        return
+    fig, ax = plt.subplots()
+    ax.plot(dates, arr1, marker="o")
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel("RTC Backscatter")
+    plt.title(titlestr)
+    plt.tight_layout()
+    fig.savefig(fpath,dpi=300,bbox_inches="tight")
+
+def plot_val(fpath,dates,arr1,titlestr,ylabel):
+    if len(dates) == 0 or len(arr1) == 0:
+        return
+    fig, ax = plt.subplots()
+    ax.plot(dates, arr1, marker="o")
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel(ylabel)
+    plt.title(titlestr)
+    plt.tight_layout()
+    fig.savefig(fpath,dpi=300,bbox_inches="tight")
+
+def make_img_grid(imgs, n_rows, n_cols):
+    assert len(imgs) == n_rows * n_cols
+
+    # Assuming input images are same size
+
+    # Build rows
+    rows = []
+    for r in range(n_rows):
+        row_imgs = imgs[r*n_cols : (r+1)*n_cols]
+        row = cv2.hconcat(row_imgs)
+        rows.append(row)
+
+    grid = cv2.vconcat(rows)
+    return grid

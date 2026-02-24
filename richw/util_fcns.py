@@ -1,24 +1,33 @@
 
 import sys
 import os
+import time
 import inspect
 from pathlib import Path
 import contextily as ctx
 from datetime import datetime, timedelta
 import requests
 from typing import Iterable, List
+import re
+
+import datetime as dt
+import mercantile
 
 import math
 from shapely.geometry import Point
-from shapely.geometry import box
+from shapely.geometry import box, shape
+from shapely.ops import unary_union
 from geopy.distance import geodesic
 import pandas as pd
 import geopandas as gpd
 import rasterio
 from rasterio.windows import Window
 from rasterio.transform import from_bounds
+from rasterio.transform import rowcol
 from rasterio.crs import CRS
 from rasterio.warp import calculate_default_transform, reproject, Resampling
+from osgeo import gdal
+from pyproj import Transformer
 from dem_stitcher.rio_tools import reproject_arr_to_match_profile
 from PIL import Image
 import numpy as np
@@ -62,6 +71,10 @@ from dist_s1_enumerator.mgrs_burst_data import (
     get_mgrs_tile_table_by_ids,
     get_burst_ids_in_mgrs_tiles
 )
+
+from dist_s1.rio_tools import open_one_ds
+from distmetrics.rio_tools import merge_with_weighted_overlap
+
 from dist_s1_enumerator.dist_enum import enumerate_dist_s1_products
 from dist_s1.data_models.defaults import (
     DEFAULT_APPLY_DESPECKLING,
@@ -106,6 +119,7 @@ from dist_s1.data_models.defaults import (
 from dist_s1.data_models.runconfig_model import RunConfigData
 
 import plot_fcns
+import utils_geotif
 import debug_defs
 
 
@@ -224,6 +238,8 @@ def run_mgrs_seq_local(mgrs_tile,sorted_post_dates,
     input_data_dir = dir_prefix + '/'
     product_dst_dir = dir_prefix + '/'
     apply_water_mask = 'false'
+    device = 'cpu'
+    n_workers_for_norm_param_estimation = 5
     algo_config_path = dir_prefix + './alg_config_baseline.yml'
     prior = None
     prod_names = []
@@ -251,6 +267,9 @@ def run_mgrs_seq_local(mgrs_tile,sorted_post_dates,
                 input_data_dir=input_data_dir,
                 product_dst_dir=product_dst_dir,
                 apply_water_mask=apply_water_mask,
+                device=device,
+                n_workers_for_norm_param_estimation=(
+                    n_workers_for_norm_param_estimation),
                 prior_dist_s1_product=prior,
                 algo_config_path=algo_config_path)
           elif subset_bbox is not None:
@@ -261,6 +280,9 @@ def run_mgrs_seq_local(mgrs_tile,sorted_post_dates,
                 input_data_dir=input_data_dir,
                 product_dst_dir=product_dst_dir,
                 apply_water_mask=apply_water_mask,
+                device=device,
+                n_workers_for_norm_param_estimation=(
+                    n_workers_for_norm_param_estimation),
                 prior_dist_s1_product=prior,
                 algo_config_path=algo_config_path)
           else:
@@ -269,6 +291,9 @@ def run_mgrs_seq_local(mgrs_tile,sorted_post_dates,
                 input_data_dir=input_data_dir,
                 product_dst_dir=product_dst_dir,
                 apply_water_mask=apply_water_mask,
+                device=device,
+                n_workers_for_norm_param_estimation=(
+                    n_workers_for_norm_param_estimation),
                 prior_dist_s1_product=prior,
                 algo_config_path=algo_config_path)
 
@@ -279,7 +304,7 @@ def run_mgrs_seq_local(mgrs_tile,sorted_post_dates,
               # confirmation process is finished using the full size files
               # Alternatively could separate confirmation out of the
               # sas_workflow, but this seems easier for now.
-              if subset_bbox is not None:
+              if subset_bbox is not None and prior is not None:
                   print('Subsetting output product files in prior product')
                   subset_outputs(prior,gdf1,width,hgt)
               prior = nominal_prior
@@ -308,7 +333,7 @@ def run_mgrs_seq_local(mgrs_tile,sorted_post_dates,
 
     return df_prod
 
-def subset_outputs(out_dir,gdf1,width,hgt):
+def subset_outputs_org(out_dir,gdf1,width,hgt):
     if out_dir is not None and out_dir.is_dir():
         for out_path in out_dir.glob("*.tif"):
             with rasterio.open(out_path) as out:
@@ -318,12 +343,134 @@ def subset_outputs(out_dir,gdf1,width,hgt):
                 # Over-write output tif's with subset data
                 subset.write(subset_out,1)
 
+# Below from perplexity.ai to preserve all metadata seen by gdal
+def subset_outputs(out_dir, gdf1, width, hgt):
+    if out_dir is not None and out_dir.is_dir():
+        for out_path in out_dir.glob("*.tif"):
+            out_path_str = str(out_path)
+
+            # ---- 1. Open original with rasterio to get profile + data ----
+            with rasterio.open(out_path) as src:
+                orig_profile = src.profile.copy()
+
+                subset_profile, subset_data = subset_geotif(
+                    gdf1, width, hgt, src)
+
+            # ---- 2. Merge original profile with subset-specific changes ----
+            new_profile = orig_profile.copy()
+            new_profile.update(subset_profile)
+
+            # ---- 3. Open original with GDAL to capture ALL metadata ----
+            ds = gdal.Open(out_path_str, gdal.GA_ReadOnly)
+
+            # Dataset-level metadata (all domains)
+            ds_domains = ds.GetMetadataDomainList() or []
+            ds_meta_by_domain = {}
+            for dom in ds_domains:
+                ds_meta_by_domain[dom] = ds.GetMetadata(dom) or {}
+
+            # Band-level metadata (all domains)
+            band_meta_by_band = {}
+            for i in range(1, ds.RasterCount + 1):
+                band = ds.GetRasterBand(i)
+                b_domains = band.GetMetadataDomainList() or []
+                band_meta_by_band[i] = {}
+                for bdom in b_domains:
+                    band_meta_by_band[i][bdom] = band.GetMetadata(bdom) or {}
+
+            ds = None  # close GDAL dataset
+
+            # ---- 4. Overwrite GeoTIFF with new data using rasterio ----
+            with rasterio.open(out_path, "w", **new_profile) as dst:
+                # Write subset data (handle single vs multi-band)
+                if subset_data.ndim == 2:  # single band
+                    dst.write(subset_data, 1)
+                else:  # (bands, rows, cols)
+                    dst.write(subset_data)
+
+            # ---- 5. Reopen with GDAL to reapply all metadata domains ----
+            ds_out = gdal.Open(out_path_str, gdal.GA_Update)
+
+            # Dataset-level metadata (all original domains)
+            for dom, kv in ds_meta_by_domain.items():
+                if kv:
+                    ds_out.SetMetadata(kv, dom if dom is not None else "")
+
+            # Band-level metadata (all domains per band)
+            for i in range(1, ds_out.RasterCount + 1):
+                band_out = ds_out.GetRasterBand(i)
+                if i not in band_meta_by_band:
+                    continue
+                for bdom, bkv in band_meta_by_band[i].items():
+                    if bkv:
+                        band_out.SetMetadata(
+                            bkv, bdom if bdom is not None else "")
+
+            ds_out = None  # flush and close
+
+# Update just the raster data of a geotif file while preserving all metadata
+def modify_tifdata(tif_path, newdata):
+    # Open original with rasterio to get profile
+    with rasterio.open(tif_path) as src:
+        orig_profile = src.profile.copy()
+
+    # Open original with GDAL to capture ALL metadata
+    ds = gdal.Open(str(tif_path), gdal.GA_ReadOnly)
+
+    # Dataset-level metadata (all domains)
+    ds_domains = ds.GetMetadataDomainList() or []
+    ds_meta_by_domain = {}
+    for dom in ds_domains:
+        ds_meta_by_domain[dom] = ds.GetMetadata(dom) or {}
+
+    # Band-level metadata (all domains)
+    band_meta_by_band = {}
+    for i in range(1, ds.RasterCount + 1):
+        band = ds.GetRasterBand(i)
+        b_domains = band.GetMetadataDomainList() or []
+        band_meta_by_band[i] = {}
+        for bdom in b_domains:
+            band_meta_by_band[i][bdom] = band.GetMetadata(bdom) or {}
+
+    ds = None  # close GDAL dataset
+
+    # Overwrite GeoTIFF with new data using rasterio
+    with rasterio.open(str(tif_path), "w", **orig_profile) as dst:
+        # Write new data (handle single vs multi-band)
+        if newdata.ndim == 2:  # single band
+            dst.write(newdata, 1)
+        else:  # (bands, rows, cols)
+            dst.write(newdata)
+
+    # Reopen with GDAL to reapply all metadata domains
+    ds_out = gdal.Open(str(tif_path), gdal.GA_Update)
+
+    # Dataset-level metadata (all original domains)
+    for dom, kv in ds_meta_by_domain.items():
+        if kv:
+            ds_out.SetMetadata(kv, dom if dom is not None else "")
+
+    # Band-level metadata (all domains per band)
+    for i in range(1, ds_out.RasterCount + 1):
+        band_out = ds_out.GetRasterBand(i)
+        if i not in band_meta_by_band:
+            continue
+        for bdom, bkv in band_meta_by_band[i].items():
+            if bkv:
+                band_out.SetMetadata(
+                    bkv, bdom if bdom is not None else "")
+
+    ds_out = None  # flush and close
+
 def subset_list(in_paths,out_paths,gdf1,width,hgt):
     if (in_paths is not None
       and len(in_paths) > 0
       and out_paths is not None
       and len(out_paths) > 0):
         for in_path,out_path in zip(in_paths,out_paths):
+            # Ensure the subset output dir exists
+            subset_pathbase = Path(out_path).parent
+            subset_pathbase.mkdir(parents=True, exist_ok=True)
             with rasterio.open(in_path) as src:
                 # Form subset output product using centroids,width,hgt
                 subset_profile,subset_out = subset_geotif(gdf1,width,hgt,src)
@@ -341,10 +488,17 @@ def prod_from_dir(prod_dir,prod_base="OPERA_L3_DIST-ALERT-S1"):
     for dir_path in basedir.glob(f"{prod_base}*"):
         if dir_path.is_dir():
             prod_names.append(dir_path)
-            parts = str(dir_path).split('_')
-            mgrs_tile_str = parts[3][1:]
-            post_date_str = parts[4]
-            prod_date_str = parts[5]
+            #parts = str(dir_path).split('_')
+            parts = re.split(r'[._]',str(dir_path))
+            mgrs_tile_str = first_starting_with(parts,"T")[1:]
+            result = [s for s in parts if re.match(r'^\d', s)]
+            post_date_str = None
+            if len(result[0]) > 4:
+                post_date_str = result[0]
+            prod_date_str = None
+            if len(result) > 1:
+                if len(result[1]) > 4:
+                    prod_date_str = result[1]
             mgrs_tiles.append(mgrs_tile_str)
             post_dates.append(post_date_str)
             prod_dates.append(prod_date_str)
@@ -358,26 +512,47 @@ def prod_from_dir(prod_dir,prod_base="OPERA_L3_DIST-ALERT-S1"):
 
     return df_prod
 
+def first_starting_with(items, prefix):
+    """
+    Return the first string in `items` that starts with `prefix`.
+    If none match, return None.
+    """
+    for s in items:
+        if isinstance(s, str) and s.startswith(prefix):
+            return s
+    return None
+
+def first_starting_with_digit(items):
+    """
+    Return the first string in `items` that starts with a digit 0-9.
+    If no such string exists, return None.
+    """
+    for s in items:
+        if s[:1].isdigit():
+            return s
+    return None
+
 def pull_hls_seq_local(start_date,end_date,hls_dir,bbox,mgrs_tile_id,prod_strs):
-    # Get list of Dist-HLS in post time window
+    HLSS30_CONCEPT = "C2021957295-LPCLOUD"  # Sentinel-2 SR
+    HLSL30_CONCEPT = "C2021957657-LPCLOUD"  # Landsat SR
+    collection_concept_id = HLSS30_CONCEPT
+    pull_cmr_seq_local(start_date,
+        end_date,
+        hls_dir,
+        bbox,
+        mgrs_tile_id,
+        prod_strs,
+        collection_concept_id)
 
-    minx, miny, maxx, maxy = bbox.bounds
-
-    # Ensure output directory exists
-    pathbase = Path(hls_dir)
-    pathbase.mkdir(parents=True, exist_ok=True)
-
-    collection_id = "OPERA_L3_DIST-ALERT-HLS_V1"
-
-    # Date range in ISO 8601 format (UTC)
-    #start_date = spd[0]
-    #end_date = spd[-1]
-
-    #start_date = df_prod['post_date'].min()
-    #end_date = df_prod['post_date'].max()
-
+def pull_dist_hls_seq_local(start_date,
+    end_date,
+    hls_dir,
+    bbox,
+    mgrs_tile_id,
+    prod_strs):
     print("Look for correct Dist-HLS collection id")
-    cmr_collections_url = "https://cmr.earthdata.nasa.gov/search/collections.json"
+    cmr_collections_url = (
+        "https://cmr.earthdata.nasa.gov/search/collections.json")
     params = {
         "keyword": "OPERA_L3_DIST-ALERT-HLS",  # or just "DIST-ALERT-HLS"
         "provider": "LPCLOUD",
@@ -390,13 +565,38 @@ def pull_hls_seq_local(start_date,end_date,hls_dir,bbox,mgrs_tile_id,prod_strs):
         print(col["short_name"], col.get("version_id"), col["id"])
 
     collection_concept_id = "C2746980408-LPCLOUD"  # OPERA_L3_DIST-ALERT-HLS_V1
+
+    pull_cmr_seq_local(start_date,
+        end_date,
+        hls_dir,
+        bbox,
+        mgrs_tile_id,
+        prod_strs,
+        collection_concept_id)
+
+def pull_cmr_seq_local(start_date,
+    end_date,
+    hls_dir,
+    bbox,
+    mgrs_tile_id,
+    prod_strs,
+    collection_concept_id,
+):
+
+    minx, miny, maxx, maxy = bbox.bounds
+
+    # Ensure output directory exists
+    pathbase = Path(hls_dir)
+    pathbase.mkdir(parents=True, exist_ok=True)
+
+    # Get list of Dist-HLS in post time window
     cmr_url = "https://cmr.earthdata.nasa.gov/search/granules.json"
     params = {
         "collection_concept_id": collection_concept_id,
         "temporal": f"{start_date},{end_date}",
         # match granule names like OPERA_L3_DIST-ALERT-HLS_T10TER_...
         "bounding_box": f"{minx},{miny},{maxx},{maxy}",
-        "page_size": 200,
+        "page_size": 2000,
     }
 
     r = requests.get(cmr_url, params=params)
@@ -409,15 +609,24 @@ def pull_hls_seq_local(start_date,end_date,hls_dir,bbox,mgrs_tile_id,prod_strs):
         if not title:
             continue
         parts = title.split("_")
-        if len(parts) >= 4:
-            if mgrs_tile_id in parts[3]:
-                for link in d.get("links", []):
-                    href = link.get("href","")
-                    if not href.startswith("https://"):
-                        continue
-                    if any(sub in href for sub in prod_strs):
-                        mgrs_prod_filtered.append(d)
+        if mgrs_tile_id in title:
+            for link in d.get("links", []):
+                href = link.get("href","")
+                if not href.startswith("https://"):
+                    continue
+                if any(sub in href for sub in prod_strs):
+                    mgrs_prod_filtered.append(d)
+
+#        if len(parts) >= 4:
+#            if mgrs_tile_id in parts[3]:
+#                for link in d.get("links", []):
+#                    href = link.get("href","")
+#                    if not href.startswith("https://"):
+#                        continue
+#                    if any(sub in href for sub in prod_strs):
+#                        mgrs_prod_filtered.append(d)
         
+
     #mgrs_filtered = [
     #    d for d in granules
     #    if "title" in d
@@ -451,6 +660,199 @@ def pull_hls_seq_local(start_date,end_date,hls_dir,bbox,mgrs_tile_id,prod_strs):
                     for chunk in resp.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
+
+def pull_radd_seq_local(start_date, stop_date, radd_pathbase, bbox, mgrs_tile_id, radd_prods, api_key):
+    """
+    Downloads RADD deforestation alert GeoTIFFs for a given bbox and date range.
+    
+    Args:
+        start_date/stop_date: 'YYYY-MM-DD'
+        radd_pathbase: Local directory path (string)
+        bbox: List of points defining a polygon [[lon, lat], ..., [lon, lat]]
+        mgrs_tile_id: Identifier for filename
+        radd_prods: Dataset ID (e.g., 'wur_radd_alerts')
+        api_key: GFW API Key
+    """
+    
+    base_url = f"https://data-api.globalforestwatch.org/dataset/{radd_prods}/latest/export"
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    
+    # Define payload with SQL date filter and spatial bbox
+    payload = {
+        "geometry": bbox.__geo_interface__,
+        "sql": f"SELECT * FROM results WHERE {radd_prods}__date >= '{start_date}' AND {radd_prods}__date <= '{stop_date}'",
+        "export_format": "geotiff"
+    }
+
+    # 1. Trigger the Export
+    print(f"Requesting GeoTIFF export for {mgrs_tile_id}...")
+    resp = requests.post(base_url, headers=headers, json=payload)
+    resp.raise_for_status()
+    
+    job_info = resp.json()
+    response_id = job_info['data']['id']
+    status_url = f"https://data-api.globalforestwatch.org/task/{response_id}"
+
+    # 2. Poll for Completion
+    download_url = None
+    print("Exporting on GFW servers (this may take a few minutes)...")
+    
+    while True:
+        status_resp = requests.get(status_url, headers=headers).json()
+        status = status_resp['data']['status']
+        
+        if status == 'saved':
+            # The API returns a list of URLs; usually one for a small bbox
+            download_url = status_resp['data']['export_urls'][0]
+            break
+        elif status == 'failed':
+            raise Exception(f"Export failed: {status_resp['data']['message']}")
+        
+        time.sleep(10) # Wait 10 seconds before checking again
+
+    # 3. Download the Local File
+    output_dir = Path(radd_pathbase)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    file_name = f"RADD_{mgrs_tile_id}_{start_date}.tif"
+    local_path = output_dir / file_name
+    
+    print(f"Downloading GeoTIFF to {local_path}...")
+    with requests.get(download_url, stream=True) as r:
+        r.raise_for_status()
+        with open(local_path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+                
+    print("Download complete.")
+    return str(local_path)
+
+# ---------------------------------------------------------------------
+# Helper: pull RADD "granules" (here: tiles / features) to local dir
+# ---------------------------------------------------------------------
+
+def pull_radd_seq_local2(start_date,
+                        end_date,
+                        radd_dir,
+                        bbox,
+                        mgrs_tile_id,
+                        prod_strs):
+    """
+    Download RADD disturbance features intersecting bbox and time window.
+
+    Parameters
+    ----------
+    start_date : str (ISO) or datetime
+    end_date   : str (ISO) or datetime
+    radd_dir   : str, base directory to store results
+    bbox       : shapely.geometry.Polygon with .bounds (minx, miny, maxx, maxy)
+    mgrs_tile_id : str, e.g. 'T10TER' (kept for interface compatibility;
+                   you can use it to filter by MGRS if you have a tile mask)
+    prod_strs  : list[str], substrings used to filter download URLs / layers
+                 (kept for interface compatibility – not strictly needed here)
+    """
+
+    # Normalize dates to ISO YYYY-MM-DD
+    if isinstance(start_date, dt.date):
+        start_date = start_date.isoformat()
+    if isinstance(end_date, dt.date):
+        end_date = end_date.isoformat()
+
+    # RADD is exposed in Google Earth Engine as:
+    #   projects/radar-wur/raddalert/v1  (version 1) [web:3]
+    # and as vector tiles via the Global Forest Watch platform. [web:1]
+    #
+    # GFW’s vector tile endpoint for RADD (documented in their Open Data portal)
+    # is typically of the form:
+    #   https://data-api.globalforestwatch.org/v1/arcgis/rest/services/RADD/FeatureServer/0/query
+    #
+    # Here we query that service directly and write GeoJSON per request.
+    radd_fs_url = (
+        "https://data-api.globalforestwatch.org/v1/arcgis/rest/services/"
+        "RADD_alerts/FeatureServer/0/query"
+    )
+    radd_url = (
+        "https://data-api.globalforestwatch.org/dataset/wur_radd_alerts/latest/download/geotiff"
+    )
+
+    minx, miny, maxx, maxy = bbox.bounds
+    bbox_geom = box(minx, miny, maxx, maxy)
+
+    # Create output directory
+    out_base = Path(radd_dir)
+    out_base.mkdir(parents=True, exist_ok=True)
+
+    # Build ESRI-style time filter on alert date field (field name may differ;
+    # on GFW it is typically 'alert_date' or 'date' in milliseconds since epoch). [web:1]
+    # For safety we query by calendar year range using BETWEEN (for a real app,
+    # check the exact field name/format on the RADD layer metadata).
+    where = (
+        f"1=1"  # you will likely replace this with a proper date filter
+    )
+
+    params = {
+        "f": "geojson",
+        "where": where,
+        "outFields": "*",
+        "geometry": f"{minx},{miny},{maxx},{maxy}",
+        "geometryType": "esriGeometryEnvelope",
+        "inSR": 4326,
+        "spatialRel": "esriSpatialRelIntersects",
+        "outSR": 4326,
+        "returnGeometry": "true",
+        "resultOffset": 0,
+        "resultRecordCount": 2000,
+    }
+
+    session = requests.Session()
+    all_features = []
+    while True:
+        resp = session.get(radd_fs_url, params=params)
+        resp.raise_for_status()
+        gj = resp.json()
+
+        features = gj.get("features", [])
+        if not features:
+            break
+
+        # Filter by date using properties if needed, e.g.:
+        # feat_date = dt.datetime.utcfromtimestamp(attrs['alert_date'] / 1000).date()
+        # and keep only between start_date and end_date.
+
+        for feat in features:
+            geom = feat.get("geometry")
+            if not geom:
+                continue
+            shapely_geom = shape(geom)
+            if not shapely_geom.intersects(bbox_geom):
+                continue
+            all_features.append(feat)
+
+        # Pagination
+        if len(features) < params["resultRecordCount"]:
+            break
+        params["resultOffset"] += params["resultRecordCount"]
+
+    # Optional: intersect against a specific MGRS tile footprint if you have it.
+    # Here we keep mgrs_tile_id only to preserve function signature.
+
+    # Write a single GeoJSON file with all features
+    if all_features:
+        out_path = out_base / f"radd_alerts_{start_date}_{end_date}.geojson"
+        out_json = {
+            "type": "FeatureCollection",
+            "features": all_features,
+        }
+        import json
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(out_json, f)
+        print(f"Wrote {len(all_features)} RADD features to {out_path}")
+    else:
+        print("No RADD alerts found for the given window and bbox.")
+
+    raise Exception("radd stop 1")
+
 
 def merge_post_dates(df_s1_prod,df_hls_prod):
     for df in (df_s1_prod,df_hls_prod):
@@ -496,6 +898,252 @@ def merge_post_dates(df_s1_prod,df_hls_prod):
         drop=True)[["idx1", "idx2"]]
 
     return all_pairs
+
+def merge_post_dates_three(df1, df2, df3):
+    # Normalize and timestamp
+    for df in (df1, df2, df3):
+        df["post_ts"] = df["post_date"].map(parse_mixed)
+
+    # Preserve original indices
+    df1 = df1.reset_index().rename(columns={"index": "idx1"})
+    df2 = df2.reset_index().rename(columns={"index": "idx2"})
+    df3 = df3.reset_index().rename(columns={"index": "idx3"})
+
+    df1 = df1.sort_values("post_ts")
+    df2 = df2.sort_values("post_ts")
+    df3 = df3.sort_values("post_ts")
+
+    def pair_two(df_left, df_right, left_idx_col, right_idx_col):
+        left_matches = pd.merge_asof(
+            df_left,
+            df_right[[right_idx_col, "post_ts"]].rename(
+                columns={"post_ts": "post_ts_r"}
+            ),
+            left_on="post_ts",
+            right_on="post_ts_r",
+            direction="nearest",
+        )
+        right_matches = pd.merge_asof(
+            df_right,
+            df_left[[left_idx_col, "post_ts"]].rename(
+                columns={"post_ts": "post_ts_l"}
+            ),
+            left_on="post_ts",
+            right_on="post_ts_l",
+            direction="nearest",
+        )
+        pairs_left = left_matches[[left_idx_col, right_idx_col]]
+        pairs_right = right_matches[[left_idx_col, right_idx_col]]
+        all_pairs = (
+            pd.concat([pairs_left, pairs_right], ignore_index=True)
+            .drop_duplicates()
+        )
+        # Add chronological sort key
+        l_ts = df_left.set_index(left_idx_col)["post_ts"]
+        r_ts = df_right.set_index(right_idx_col)["post_ts"]
+        all_pairs = all_pairs.assign(
+            ts_l=lambda x: l_ts.loc[x[left_idx_col]].to_list(),
+            ts_r=lambda x: r_ts.loc[x[right_idx_col]].to_list(),
+        )
+        all_pairs["ts_min"] = all_pairs[["ts_l", "ts_r"]].min(axis=1)
+        all_pairs = all_pairs.sort_values("ts_min").reset_index(drop=True)
+        return all_pairs[[left_idx_col, right_idx_col, "ts_min"]]
+
+    # Pairwise pairs
+    pairs_12 = pair_two(df1, df2, "idx1", "idx2")
+    pairs_13 = pair_two(df1, df3, "idx1", "idx3")
+    pairs_23 = pair_two(df2, df3, "idx2", "idx3")
+
+    # Initialize a big frame with all possible references and a time key
+    pairs_12_full = pairs_12.assign(idx3=np.nan)
+    pairs_13_full = pairs_13.assign(idx2=np.nan)
+    pairs_23_full = pairs_23.assign(idx1=np.nan)
+
+    all_pairs = pd.concat(
+        [pairs_12_full, pairs_13_full, pairs_23_full],
+        ignore_index=True,
+    )
+
+    # Sort by earliest timestamp so first match for each index is "best"
+    all_pairs = all_pairs.sort_values("ts_min").reset_index(drop=True)
+
+    # For each idx1, idx2, idx3, keep first occurrence
+    def keep_first_for(col):
+        mask = all_pairs[col].notna()
+        first_pos = (
+            all_pairs.loc[mask]
+            .drop_duplicates(subset=[col])
+            .index
+        )
+        return first_pos
+
+    keep_idx1 = keep_first_for("idx1")
+    keep_idx2 = keep_first_for("idx2")
+    keep_idx3 = keep_first_for("idx3")
+
+    keep_rows = sorted(set(keep_idx1) | set(keep_idx2) | set(keep_idx3))
+    result = all_pairs.loc[keep_rows].sort_values("ts_min").reset_index(drop=True)
+
+    # -----------------------------
+    # Fill missing indices per row
+    # -----------------------------
+    # Build lookup for timestamps
+    ts1 = df1.set_index("idx1")["post_ts"]
+    ts2 = df2.set_index("idx2")["post_ts"]
+    ts3 = df3.set_index("idx3")["post_ts"]
+
+    def nearest_idx(ts_series, target_ts):
+        # assumes ts_series is sorted by timestamp
+        # returns index label of nearest timestamp
+        s = ts_series.sort_values()
+        pos = s.searchsorted(target_ts)
+        if pos == 0:
+            return s.index[0]
+        if pos == len(s):
+            return s.index[-1]
+        before = s.index[pos - 1]
+        after = s.index[pos]
+        if abs(s.iloc[pos - 1] - target_ts) <= abs(s.iloc[pos] - target_ts):
+            return before
+        else:
+            return after
+
+    filled_rows = []
+    for _, row in result.iterrows():
+        i1, i2, i3 = row["idx1"], row["idx2"], row["idx3"]
+
+        # compute representative timestamp for this row
+        ts_candidates = []
+        if pd.notna(i1):
+            ts_candidates.append(ts1.loc[i1])
+        if pd.notna(i2):
+            ts_candidates.append(ts2.loc[i2])
+        if pd.notna(i3):
+            ts_candidates.append(ts3.loc[i3])
+        rep_ts = min(ts_candidates) if ts_candidates else None
+
+        # fill each missing index with nearest to rep_ts
+        if pd.isna(i1):
+            i1 = nearest_idx(ts1, rep_ts)
+        if pd.isna(i2):
+            i2 = nearest_idx(ts2, rep_ts)
+        if pd.isna(i3):
+            i3 = nearest_idx(ts3, rep_ts)
+
+        filled_rows.append((i1, i2, i3))
+
+    filled = pd.DataFrame(filled_rows, columns=["idx1", "idx2", "idx3"])
+    filled['idx1'] = filled['idx1'].astype(int)
+    filled['idx2'] = filled['idx2'].astype(int)
+    filled['idx3'] = filled['idx3'].astype(int)
+    return filled
+
+def merge_post_dates_three_old(df1, df2, df3):
+    # Normalize and timestamp
+    for df in (df1, df2, df3):
+        #df["post_ts"] = pd.to_datetime(df["post_date"],
+        #                               format='mixed',
+        #                               utc=True)
+        df["post_ts"] = df["post_date"].map(parse_mixed)
+
+    # Preserve original indices
+    df1 = df1.reset_index().rename(columns={"index": "idx1"})
+    df2 = df2.reset_index().rename(columns={"index": "idx2"})
+    df3 = df3.reset_index().rename(columns={"index": "idx3"})
+
+    df1 = df1.sort_values("post_ts")
+    df2 = df2.sort_values("post_ts")
+    df3 = df3.sort_values("post_ts")
+
+    def pair_two(df_left, df_right, left_idx_col, right_idx_col):
+        left_matches = pd.merge_asof(
+            df_left,
+            df_right[[right_idx_col, "post_ts"]].rename(
+                columns={"post_ts": "post_ts_r"}
+            ),
+            left_on="post_ts",
+            right_on="post_ts_r",
+            direction="nearest",
+        )
+        right_matches = pd.merge_asof(
+            df_right,
+            df_left[[left_idx_col, "post_ts"]].rename(
+                columns={"post_ts": "post_ts_l"}
+            ),
+            left_on="post_ts",
+            right_on="post_ts_l",
+            direction="nearest",
+        )
+        pairs_left = left_matches[[left_idx_col, right_idx_col]]
+        pairs_right = right_matches[[left_idx_col, right_idx_col]]
+        all_pairs = (
+            pd.concat([pairs_left, pairs_right], ignore_index=True)
+            .drop_duplicates()
+        )
+        # Add chronological sort key
+        l_ts = df_left.set_index(left_idx_col)["post_ts"]
+        r_ts = df_right.set_index(right_idx_col)["post_ts"]
+        all_pairs = all_pairs.assign(
+            ts_l=lambda x: l_ts.loc[x[left_idx_col]].to_list(),
+            ts_r=lambda x: r_ts.loc[x[right_idx_col]].to_list(),
+        )
+        all_pairs["ts_min"] = all_pairs[["ts_l", "ts_r"]].min(axis=1)
+        all_pairs = all_pairs.sort_values("ts_min").reset_index(drop=True)
+        return all_pairs[[left_idx_col, right_idx_col, "ts_min"]]
+
+    # Pairwise pairs
+    pairs_12 = pair_two(df1, df2, "idx1", "idx2")
+    pairs_13 = pair_two(df1, df3, "idx1", "idx3")
+    pairs_23 = pair_two(df2, df3, "idx2", "idx3")
+
+    # Initialize a big frame with all possible references and a time key
+    # Start with all pairwise rows, then we will deduplicate while enforcing coverage.
+    pairs_12_full = pairs_12.assign(idx3=np.nan)
+    pairs_13_full = pairs_13.assign(idx2=np.nan)
+    pairs_23_full = pairs_23.assign(idx1=np.nan)
+
+    all_pairs = pd.concat(
+        [pairs_12_full, pairs_13_full, pairs_23_full],
+        ignore_index=True,
+    )
+
+    # Sort by earliest timestamp so first match for each index is "best"
+    all_pairs = all_pairs.sort_values("ts_min").reset_index(drop=True)
+
+    # For each idx1, idx2, idx3, keep first occurrence
+    def keep_first_for(col):
+        mask = all_pairs[col].notna()
+        first_pos = (
+            all_pairs.loc[mask]
+            .drop_duplicates(subset=[col])
+            .index
+        )
+        return first_pos
+
+    keep_idx1 = keep_first_for("idx1")
+    keep_idx2 = keep_first_for("idx2")
+    keep_idx3 = keep_first_for("idx3")
+
+    keep_rows = sorted(set(keep_idx1) | set(keep_idx2) | set(keep_idx3))
+    result = all_pairs.loc[keep_rows].sort_values("ts_min").reset_index(drop=True)
+
+    # Final output: just indices, ordered chronologically by earliest timestamp
+    return result[["idx1", "idx2", "idx3"]]
+
+def parse_mixed(s: str):
+    parts = s.split('T')
+    #m = re.match(r"^(\d{4})(\d{2})(\d{2})T(\d{6})Z$", s)
+    #if not m:
+    #    return pd.NaT
+    #year, a, b, time = m.groups()
+    # Month-day if month is 01–12 and day is 01–31
+    #if 1 <= int(a) <= 12 and 1 <= int(b) <= 31:
+    if len(parts[0]) == 8:
+        fmt = "%Y%m%dT%H%M%SZ"
+    else:
+        # Treat as year + day-of-year
+        fmt = "%Y%jT%H%M%S"
+    return pd.to_datetime(s, format=fmt, utc=True)
 
 def subset_path_list(path_list,gdf1,width,hgt):
   new_list = []
@@ -742,11 +1390,15 @@ def run_dist_s1_workflow_subset(
         loc_path_crosspol_subset = replace_subfolder_component(
             loc_path_crosspol_filtered,mgrs_tile_id,mgrs_tile_id + '_subset')
 
+        loc_str_copol_subset = [str(item) for item in loc_path_copol_subset]
+        loc_str_crosspol_subset = [str(item)
+            for item in loc_path_crosspol_subset]
+
         # Subset the filtered lists of RTC inputs and use the subset name list
         new_df_inputs.loc_path_copol = subset_list(
-            loc_path_copol_filtered,loc_path_copol_subset,gdf1,width,hgt)
+            loc_path_copol_filtered,loc_str_copol_subset,gdf1,width,hgt)
         new_df_inputs.loc_path_crosspol = subset_list(
-            loc_path_crosspol_filtered,loc_path_crosspol_subset,gdf1,width,hgt)
+            loc_path_crosspol_filtered,loc_str_crosspol_subset,gdf1,width,hgt)
 
         # Add extra columns needed to build a geodataframe object
         # which in turn is needed to construct a RunConfigData object
@@ -772,7 +1424,7 @@ def run_dist_s1_workflow_subset(
         new_run_config.product_dst_dir = run_config.product_dst_dir
         new_run_config.prior_dist_s1_product = run_config.prior_dist_s1_product
 
-        raise Exception("subset stop 1")
+        #raise Exception("subset stop 1")
 
         # Execute workflow on just the subset
         new_run_config2 = run_dist_s1_sas_workflow(new_run_config)
@@ -781,11 +1433,11 @@ def run_dist_s1_workflow_subset(
         # confirmation process is finished using the full size files
         # Alternatively could separate confirmation out of the
         # sas_workflow, but this seems easier for now.
-        print('Subsetting output product files in prior product')
-        if new_run_config2.prior_dist_s1_product is not None:
-            p = new_run_config2.prior_dist_s1_product.dst_dir / (
-                new_run_config2.prior_dist_s1_product.product_name)
-            subset_outputs(p,gdf1,width,hgt)
+        #print('Subsetting output product files in prior product')
+        #if new_run_config2.prior_dist_s1_product is not None:
+        #    p = new_run_config2.prior_dist_s1_product.dst_dir / (
+        #        new_run_config2.prior_dist_s1_product.product_name)
+        #    subset_outputs(p,gdf1,width,hgt)
 
         return new_run_config2,gdf1,width,hgt
     else:
@@ -858,6 +1510,12 @@ def id_bbox_setup(df_id,prop):
         crs="EPSG:4326")
     return bbox,gdf_bbox
 
+def bbox_setup(min_lat,min_lon,max_lat,max_lon):
+    bbox = box(min_lon, min_lat, max_lon, max_lat)
+    gdf_bbox = gpd.GeoDataFrame({"geometry": [bbox]},
+        crs="EPSG:4326")
+    return bbox,gdf_bbox
+
 def replace_subfolder_component(
     paths: Iterable[Path], old: str, new: str
 ) -> List[Path]:
@@ -875,7 +1533,7 @@ def replace_subfolder_component(
     """
     updated = []
     for p in paths:
-        parts = p.parts
+        parts = Path(p).parts
 
         # Separate directory components and filename
         dir_parts = parts[:-1]
@@ -893,3 +1551,62 @@ def replace_subfolder_component(
         updated.append(new_path)
 
     return updated
+
+def value_at(src,lon,lat):
+    transformer = Transformer.from_crs("EPSG:4326", src.crs, always_xy=True)
+    # projected coordinates
+    x,y = transformer.transform(lon,lat)
+    row,col = rowcol(src.transform,x,y)
+    band1 = src.read(1)
+    value = band1[row,col]
+    return value,row,col
+
+def rtc_setup(sel_paths,mgrs_tile_id,bbox,dst_res,prod_path,localname,
+    titlestr,vmin,vmax,lat1,lon1,circ_size,redo_merge=False):
+    sel_tif = Path(prod_path) / (localname + '.tif')
+    sel_tif2 = Path(prod_path) / (localname + '2.tif')
+    sel_png = Path(prod_path) / (localname + '.png')
+
+    if redo_merge:
+        # Merge subset RTC geotif data and write merged output geotif
+        data = [open_one_ds(path) for path in sel_paths]
+        X_burst,profs = zip(*data)
+        X_burst_merged, p_merged = merge_with_weighted_overlap(
+            X_burst,
+            profs,
+            exterior_mask_dilation=0,
+            distance_weight_exponent=1.0,
+            use_distance_weighting_from_exterior_mask=True)
+        # Reduce out_arr from 3D Band intereaved by pixel (BIP) to 2D 
+        # and save as geotiff using the merged profile which should
+        # match the subset RTC profiles
+        #out_arr = X_burst_merged[0, ...]
+        with rasterio.open(sel_tif, 'w', **p_merged) as dst:
+            dst.write(X_burst_merged, 1)
+
+    # Reproject geotif into same destination geometry
+    geo_crs = CRS.from_epsg(4326)
+    dst_width,dst_height = utils_geotif.reproject_to_geom(
+        sel_tif,geo_crs,bbox,dst_res,sel_tif2)
+
+    # Convert the input lat,lon target point to pixel coordinates
+    #with rasterio.open(sel_tif) as src:
+    #    transformer = Transformer.from_crs("EPSG:4326",src.crs,always_xy=True)
+    #    # projected coordinates
+    #    x,y = transformer.transform(lon1,lat1)
+    #    row1,col1 = rowcol(src.transform,x,y) 
+
+    # Convert merged geotif into png and mark target point
+    sel_bounds = utils_geotif.geotif_to_png_map2(
+        sel_tif2,
+        sel_png,
+        geo_crs,
+        titlestr,
+        'gray',
+        vmin,vmax,lat1,lon1,circ_size,None)
+
+    #center_lat,center_lon,sel_bounds = utils_geotif.geotif_to_png_overlay(
+    #    sel_tif,sel_png,'gray',vmin,vmax,row1,col1)
+   
+    return sel_tif2,sel_png,sel_bounds
+ 
