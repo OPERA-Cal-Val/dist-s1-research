@@ -1,0 +1,7 @@
+aggregated_validation_dist_2024/
+dist_hls/
+val_products_transformer_optimized-max10_processed_2026-02-05/
+informal_val_sites_transformer_optimized-max10_processed_2026-02-05/
+__pycache__/
+dist-s1-events_transformer_optimized-max10_processed_2026-02-12
+rsync_command.sh
